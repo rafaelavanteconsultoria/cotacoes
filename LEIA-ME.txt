@@ -1,0 +1,28 @@
+APLICATIVO DE COTAÇÕES - ARQUIVOS PARA PUBLICAR
+
+Esta pasta é o aplicativo inteiro. Ela NÃO contém dados de clientes, preços,
+CPF nem conta bancária. Esses dados ficam num arquivo separado
+(dados_iniciais.json) que NUNCA deve ser publicado.
+
+COMO PUBLICAR DE GRAÇA (exemplo: GitHub Pages) - os nomes dos menus podem variar
+1. Crie uma conta gratuita em github.com.
+2. Crie um repositório novo (público) com um nome simples, ex.: cotacoes.
+3. Envie TODOS os arquivos desta pasta (index.html, sw.js, manifest.webmanifest,
+   header.jpg e as pastas lib e icons) com a opção "Add file > Upload files".
+4. Em Settings > Pages, escolha "Deploy from a branch", branch main, pasta / (root).
+5. Aguarde cerca de 1 a 2 minutos. O endereço será parecido com
+   https://SEUUSUARIO.github.io/cotacoes/
+
+PRIMEIRO USO NO CELULAR OU COMPUTADOR
+1. Abra o endereço no navegador (Chrome no Android, Safari no iPhone).
+2. Toque em Configurações > "Carregar arquivo de dados / backup" e escolha o
+   arquivo dados_iniciais.json (guardado no aparelho ou no Google Drive).
+3. Instale o ícone:
+   - Android (Chrome): menu de três pontos > "Instalar aplicativo" / "Adicionar à tela inicial".
+   - iPhone (Safari): botão Compartilhar > "Adicionar à Tela de Início".
+   - Computador (Chrome/Edge): ícone de instalar na barra de endereço.
+
+OBSERVAÇÕES
+- Os dados ficam guardados SOMENTE no aparelho. Use "Fazer backup" de vez em quando.
+- Se alterar algum arquivo e publicar de novo, o aplicativo atualiza na segunda
+  vez que for aberto.

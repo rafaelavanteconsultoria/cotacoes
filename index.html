@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cotações</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1F4E79">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cotações">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+:root{--az:#1F4E79;--az2:#163a5a;--bg:#F4F7FA;--tx:#101820;--mut:#4a5a6a;--bd:#8fa6bd;--er:#a3201a;--am:#FFF4D6;--ok:#E6F4EA;--fs:20px}
+*{box-sizing:border-box}
+html{font-size:var(--fs);-webkit-text-size-adjust:100%}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--tx);line-height:1.35}
+#app{max-width:720px;margin:0 auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;background:var(--bg)}
+header{background:var(--az);color:#fff;padding:.55rem 1rem;padding-top:calc(.55rem + env(safe-area-inset-top));position:sticky;top:0;z-index:5}
+.hrow{display:flex;align-items:center;gap:.6rem}
+header h1{font-size:1.15rem;margin:0;flex:1}
+.aa{background:#fff;color:var(--az);border:0;border-radius:.6rem;font-size:1rem;font-weight:700;padding:.35rem .7rem;min-height:2.4rem;cursor:pointer}
+#prog{display:none;margin-top:.45rem}
+#prog .t{font-size:.85rem;opacity:.95}
+#prog .b{height:.45rem;background:rgba(255,255,255,.3);border-radius:1rem;margin-top:.25rem;overflow:hidden}
+#prog .b i{display:block;height:100%;background:#fff;width:0}
+main{flex:1;padding:1rem 1rem 9rem}
+h2{font-size:1.35rem;margin:.2rem 0 .7rem;line-height:1.2}
+h3{font-size:1.1rem;margin:1rem 0 .4rem}
+p{margin:.4rem 0}
+.muted{color:var(--mut);font-size:.9rem}
+label{display:block;font-weight:700;margin:.9rem 0 .3rem}
+input,textarea,select{width:100%;font:inherit;font-size:1.1rem;padding:.7rem .8rem;border:2px solid var(--bd);border-radius:.7rem;background:#fff;color:var(--tx);min-height:3.2rem}
+input:focus,textarea:focus,select:focus{outline:3px solid #7fb0e0;border-color:var(--az)}
+textarea{resize:vertical}
+.btn{display:block;width:100%;min-height:3.4rem;font:inherit;font-size:1.05rem;font-weight:700;border-radius:.8rem;border:2px solid var(--az);background:#fff;color:var(--az);padding:.6rem 1rem;margin:.55rem 0;text-align:left;cursor:pointer}
+.btn small{display:block;font-weight:400;font-size:.85rem;color:inherit;opacity:.85;margin-top:.1rem}
+.btn.pri{background:var(--az);color:#fff}
+.btn.danger{border-color:var(--er);color:var(--er)}
+.btn.sm{min-height:2.7rem;font-size:.95rem;margin:.3rem 0;text-align:center}
+.btn.sel{background:#DCEBFA;border-width:3px}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.btn:active{filter:brightness(.92)}
+.row{display:flex;gap:.6rem}
+.row>*{flex:1}
+.card{background:#fff;border:2px solid #cfdbe7;border-radius:.8rem;padding:.7rem .8rem;margin:.6rem 0}
+.card b{display:block}
+.tot{font-weight:800;font-size:1.1rem}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:.4rem 0}
+.chip{border:2px solid var(--az);background:#fff;color:var(--az);border-radius:2rem;padding:.45rem .9rem;font:inherit;font-size:.95rem;font-weight:600;min-height:2.6rem;cursor:pointer}
+.note{background:var(--am);border:2px solid #e8c766;border-radius:.8rem;padding:.7rem .8rem;margin:.7rem 0;font-size:.95rem}
+.ok{background:var(--ok);border:2px solid #86c79a;border-radius:.8rem;padding:.7rem .8rem;margin:.7rem 0}
+.sum{display:grid;grid-template-columns:auto 1fr;gap:.2rem .8rem;margin:.4rem 0}
+.sum dt{color:var(--mut);font-size:.9rem}
+.sum dd{margin:0;font-weight:700}
+.sec{margin:.8rem 0;padding:.6rem .8rem;background:#fff;border:2px solid #cfdbe7;border-radius:.8rem}
+.sec .h{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+.sec .h b{font-size:1.02rem}
+.alt{background:none;border:2px solid var(--az);color:var(--az);border-radius:.6rem;font:inherit;font-size:.9rem;font-weight:700;padding:.3rem .8rem;min-height:2.4rem;cursor:pointer}
+#navwrap{position:fixed;left:0;right:0;bottom:0;z-index:6;background:#fff;border-top:2px solid var(--bd);padding:.5rem 1rem calc(.5rem + env(safe-area-inset-bottom))}
+#navin{max-width:720px;margin:0 auto}
+#hint{color:var(--er);font-weight:600;font-size:.9rem;min-height:0;margin:0 0 .2rem}
+#nav{display:flex;gap:.6rem}
+#nav .btn{margin:0;text-align:center;flex:1}
+#toast{position:fixed;left:1rem;right:1rem;margin:0 auto;width:fit-content;max-width:calc(100% - 2rem);bottom:8.5rem;background:#222;color:#fff;padding:.7rem 1rem;border-radius:.8rem;z-index:9;font-size:.95rem;display:none;text-align:center}
+.pillrow{display:flex;align-items:center;gap:.6rem}
+.pillrow .btn{width:3.4rem;flex:none;text-align:center;font-size:1.5rem;padding:0}
+.pillrow .v{flex:1;text-align:center;font-weight:800;font-size:1.15rem}
+.right{text-align:right}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="hrow"><h1 id="title">Cotações</h1><button class="aa" data-a="fs" aria-label="Mudar o tamanho da letra">Aa</button></div>
+    <div id="prog"><div class="t" id="progt"></div><div class="b"><i id="progb"></i></div></div>
+  </header>
+  <main id="view"></main>
+  <div id="navwrap"><div id="navin"><div id="hint"></div><div id="nav"></div></div></div>
+  <div id="toast"></div>
+</div>
+<input type="file" id="filepick" accept=".json,application/json" style="display:none">
+<script src="lib/jspdf.umd.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ---------- utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const up = s => String(s == null ? '' : s).trim().toUpperCase();
+const pad2 = n => String(n).padStart(2, '0');
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const NUM = ['', 'UM', 'DOIS', 'TRÊS', 'QUATRO', 'CINCO', 'SEIS', 'SETE', 'OITO', 'NOVE', 'DEZ'];
+
+const fmt = c => {
+  c = Math.round(Math.abs(c)) * (c < 0 ? -1 : 1);
+  const neg = c < 0; c = Math.abs(c);
+  const r = Math.floor(c / 100), d = String(c % 100).padStart(2, '0');
+  return (neg ? '-' : '') + String(r).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d;
+};
+const brl = c => 'R$ ' + fmt(c);
+function parseBR(s) {
+  s = String(s == null ? '' : s).trim().replace(/R\$|\s/g, '');
+  if (!s) return NaN;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  if (!/^\d+(\.\d+)?$/.test(s)) return NaN;
+  return parseFloat(s);
+}
+const toCents = s => { const v = parseBR(s); return isNaN(v) ? NaN : Math.round(v * 100); };
+const qtdStr = q => Number.isInteger(+q) ? pad2(+q) : String(+q).replace('.', ',');
+const lineCents = it => Math.round((+it.qtd) * (+it.unit));
+const totalCents = q => (q.itens || []).reduce((a, it) => a + lineCents(it), 0);
+const finalCents = q => (q.especial != null ? q.especial : totalCents(q));
+
+const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
+const addDays = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, d + n)); return t.getUTCFullYear() + '-' + pad2(t.getUTCMonth() + 1) + '-' + pad2(t.getUTCDate()); };
+const br = iso => { const [y, m, d] = iso.split('-'); return d + '/' + m + '/' + y; };
+const validISO = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !isNaN(Date.parse(s));
+const slug = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30).replace(/_+$/g, '');
+const numTxt = q => String(q.numero) + '/' + q.ano;
+
+/* ---------- armazenamento (no aparelho) ---------- */
+const mem = {};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); if (v !== null) return JSON.parse(v); } catch (e) {} return k in mem ? mem[k] : d; },
+  set(k, v) { mem[k] = v; try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+const DEF = { settings: { fone1: '', fone2: '', banco: '', agencia: '', conta: '', doc: '', titular: '', assinatura: '', validade: 14 },
+  counters: {}, clients: [], catalog: [], history: [], ui: { fs: 1 } };
+function normDB(x) {
+  const d = Object.assign({}, DEF, x || {});
+  d.settings = Object.assign({}, DEF.settings, d.settings || {});
+  d.ui = Object.assign({ fs: 1 }, d.ui || {});
+  ['clients', 'catalog', 'history'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+  if (!d.counters || typeof d.counters !== 'object') d.counters = {};
+  return d;
+}
+let DB = normDB(store.get('cot_db', {}));
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3000); }
+const saveDB = () => { if (!store.set('cot_db', DB)) toast('Atenção: não foi possível salvar neste aparelho. Faça um backup.'); };
+
+/* ---------- cotação em andamento ---------- */
+const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), dias: +DB.settings.validade || 14,
+  cliente: '', att: '', aeronave: '', itens: [], especial: null, espOn: false, espTxt: '',
+  entrega: { tipo: '', dest: '', transp: '', envios: 1, fretePago: true, outro: '' }, _step: 'cliente' });
+let Q = store.get('cot_draft', null);
+const saveDraft = () => { if (Q) store.set('cot_draft', Q); };
+const clearDraft = () => { Q = null; store.set('cot_draft', null); };
+
+/* ---------- textos de entrega ---------- */
+function entregaTexts(e) {
+  let prazo = '', dep = 'TOTAL DEPÓSITO';
+  const D = up(e.dest), T = up(e.transp);
+  switch (e.tipo) {
+    case 'imediato': prazo = 'IMEDIATO'; break;
+    case 'entregue': prazo = 'MATERIAL JÁ ENTREGUE'; break;
+    case 'sedex': {
+      const n = Math.max(1, parseInt(e.envios, 10) || 1);
+      prazo = n > 1 ? `${NUM[n] || n} (${pad2(n)}) SEDEX ENVIADO PARA ${D}` : `MATERIAL ENVIADO VIA SEDEX PARA ${D}`;
+      if (e.fretePago) dep = 'TOTAL DEPÓSITO COM SEDEX PAGO';
+      break; }
+    case 'transp':
+      prazo = `MATERIAL ENVIADO VIA ${T}` + (D ? ` PARA ${D}` : '');
+      if (e.fretePago) dep = 'TOTAL DEPÓSITO COM FRETE PAGO';
+      break;
+    case 'outro': prazo = up(e.outro); break;
+  }
+  return { prazo, dep };
+}
+
+/* ---------- gerador de PDF ---------- */
+let HDR = null;
+async function headerData() {
+  if (HDR) return HDR;
+  try {
+    const r = await fetch('header.jpg'); const b = await r.blob();
+    HDR = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); });
+  } catch (e) { HDR = ''; }
+  return HDR;
+}
+async function buildPdf(q) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const S = DB.settings, LH = 11.8, L = 53, R = 538;
+  let y = 0;
+  const font = b => doc.setFont('helvetica', b ? 'bolditalic' : 'italic');
+  const T = (t, x, yy, o = {}) => { font(o.b); doc.setFontSize(o.s || 9); doc.text(t, x, yy, { align: o.al || 'left', lineHeightFactor: LH / (o.s || 9) }); };
+
+  const hdr = await headerData();
+  if (hdr) doc.addImage(hdr, 'JPEG', 90, 34, 415, 415 * 177 / 947);
+  T(br(q.data), 297.6, 147, { b: 1, al: 'center' });
+  y = 171;
+  T(up(q.cliente), L, y, { b: 1 });
+  let last = y;
+  if (up(q.att)) { y += 12; T('ATT. ' + up(q.att), L, y, { b: 1 }); last = y; }
+  if (up(q.aeronave)) { y += 12; T(up(q.aeronave), 297.6, y, { b: 1, al: 'center' }); last = y; }
+  y = Math.max(198, last + 15);
+  T('COTAÇÃO:' + numTxt(q), L, y, { b: 1 });
+  y += 12; T('CONFORME SUA SOLICITAÇÃO ESTAMOS COTANDO MATERIAL ABAIXO:', L, y);
+  y += 27;
+
+  const head = () => {
+    T('QUANT.', 102, y, { b: 1, al: 'center' }); T('P/N', 153, y, { b: 1, al: 'center' });
+    T('NOME', 293, y, { b: 1, al: 'center' }); T('VLR. UNIT.', 404, y, { b: 1, al: 'center' });
+    T('TOTAL', 522, y, { b: 1, al: 'center' }); y += 13;
+  };
+  head();
+  font(false); doc.setFontSize(9);
+  for (const it of q.itens) {
+    const nm = doc.splitTextToSize(up(it.nome), 148), pn = doc.splitTextToSize(up(it.pn), 82);
+    const n = Math.max(nm.length, pn.length, 1);
+    if (y + n * LH > 790) { doc.addPage(); y = 55; head(); }
+    T(qtdStr(it.qtd), 111, y, { al: 'right' });
+    T(pn, 137, y); T(nm, 223, y);
+    T(fmt(it.unit), 429, y, { al: 'right' }); T(fmt(lineCents(it)), R, y, { al: 'right' });
+    y += n * LH;
+  }
+  if (y > 470) { doc.addPage(); y = 55; }
+  const arrow = yy => { doc.setLineWidth(0.8); doc.line(387, yy - 3, 409, yy - 3); doc.setFillColor(0, 0, 0); doc.triangle(413, yy - 3, 406, yy - 6, 406, yy, 'F'); };
+  y += 16;
+  T('TOTAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T('R$ ' + fmt(totalCents(q)), R, y, { b: 1, al: 'right' });
+  if (q.especial != null) { y += 15; T('P. ESPECIAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T('R$ ' + fmt(q.especial), R, y, { b: 1, al: 'right' }); }
+  y += 28;
+  T('VALIDADE DA PROPOSTA:', L, y, { b: 1 }); T(br(addDays(q.data, q.dias)), 264, y, { b: 1 });
+  y += 27; T('OBSERVAÇÃO:', L, y, { b: 1 }); T('MATERIAL COTADO EM REAIS', 138, y, { b: 1 });
+  y += 27; T('A VISTA VALOR LÍQUIDO', 138, y, { b: 1 });
+  const { prazo, dep } = entregaTexts(q.entrega);
+  y += 26;
+  if (prazo) {
+    font(true); doc.setFontSize(9);
+    const lines = doc.splitTextToSize('PRAZO DE ENTREGA: ' + prazo, 262);
+    T(lines, 273, y, { b: 1, al: 'center' }); y += (lines.length - 1) * LH;
+  }
+  y += 28;
+  T('QUALQUER DÚVIDA COM RELAÇÃO A ESTA COTAÇÃO CONTACTAR VIA E-MAIL OU VIA', L, y, { b: 1 });
+  const fones = [S.fone1, S.fone2].map(x => String(x || '').trim()).filter(Boolean);
+  if (fones.length) { y += 15; T('FONE WHATSAPP FONE ' + fones.join(' OU '), L, y, { b: 1 }); }
+  y += 25;
+  const bank = [];
+  if (up(S.banco)) bank.push('BANCO ' + up(S.banco));
+  if (up(S.agencia)) bank.push('AGENCIA ' + up(S.agencia));
+  if (up(S.conta)) bank.push('C/CORRENTE ' + up(S.conta));
+  if (up(S.doc)) bank.push((String(S.doc).replace(/\D/g, '').length > 11 ? 'CNPJ.: ' : 'CPF.: ') + up(S.doc));
+  if (up(S.titular)) bank.push(up(S.titular));
+  bank.forEach(l => { T(l, L, y, { b: 1 }); y += 12; });
+  y += 20;
+  T('R$ ' + fmt(finalCents(q)), 159, y, { b: 1, s: 9.5 }); T(dep, 227, y, { b: 1, s: 9.5 });
+  if (up(S.assinatura)) { y += 29; T(up(S.assinatura), 296, y, { b: 1, s: 11, al: 'center' }); }
+  return doc.output('blob');
+}
+
+/* ---------- estado de telas ---------- */
+const STEPS = ['cliente', 'contato', 'aeronave', 'itens', 'preco', 'entrega', 'datas', 'conferir'];
+let V = { name: 'home' }, CUR = null, FC = false, E = null, PDF = null, LISTSEL = '';
+
+function goto(name, extra) { V = Object.assign({ name }, extra || {}); if (STEPS.includes(name) && Q) { Q._step = name; saveDraft(); } render(); }
+function nextStep() { if (FC) { FC = false; return goto('conferir'); } goto(STEPS[STEPS.indexOf(V.name) + 1]); }
+function prevStep() { if (FC) { FC = false; return goto('conferir'); } const i = STEPS.indexOf(V.name); if (i <= 0) return goto('home'); goto(STEPS[i - 1]); }
+
+function render() {
+  CUR = SCREENS[V.name]();
+  $('#title').textContent = CUR.title;
+  const idx = STEPS.indexOf(V.name);
+  const prog = $('#prog');
+  if (idx >= 0) { prog.style.display = 'block'; $('#progt').textContent = `Passo ${idx + 1} de ${STEPS.length}`; $('#progb').style.width = ((idx + 1) / STEPS.length * 100) + '%'; }
+  else prog.style.display = 'none';
+  $('#view').innerHTML = CUR.html;
+  if (CUR.bind) CUR.bind();
+  refreshNav();
+  window.scrollTo(0, 0);
+}
+function refreshNav() {
+  const sc = CUR; let h = '';
+  const msg = sc.next && sc.valid ? sc.valid() : '';
+  $('#hint').textContent = msg;
+  if (sc.back) h += `<button class="btn" data-a="navback">${esc(sc.backLabel || 'Voltar')}</button>`;
+  if (sc.next) h += `<button class="btn pri" data-a="navnext" ${msg ? 'disabled' : ''}>${esc(sc.nextLabel || 'Continuar')}</button>`;
+  $('#nav').innerHTML = h;
+  $('#navwrap').style.display = h ? 'block' : 'none';
+}
+
+/* ---------- campos ---------- */
+function setField(f, val) {
+  const [obj, key] = f.split('.');
+  if (obj === 'E') E[key] = val;
+  else if (obj === 'cfg') { DB.settings[key] = val; saveDB(); }
+  else if (obj === 'ent') { Q.entrega[key] = val; saveDraft(); }
+  else { Q[obj] = val; if (obj === 'cliente') { const c = DB.clients.find(c => up(c.nome) === up(val)); Q.att = c ? (c.att || '') : ''; } saveDraft(); }
+}
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'f_cat') { renderCatList(); return; }
+  if (!t.dataset.f) return;
+  setField(t.dataset.f, t.type === 'checkbox' ? t.checked : t.value);
+  if (t.dataset.f === 'cliente') renderClientList();
+  if (t.dataset.f.startsWith('E.')) updateLive();
+  if (t.dataset.f === 'data') { const o = $('#valdate'); if (o) o.textContent = br(addDays(Q.data, Q.dias)); }
+  refreshNav();
+});
+
+/* ---------- telas ---------- */
+const clientRecent = () => DB.clients.slice().sort((a, b) => (b.last || 0) - (a.last || 0));
+function renderClientList() {
+  const box = $('#clist'); if (!box) return;
+  const q = up(Q.cliente);
+  const list = clientRecent().filter(c => !q || up(c.nome).includes(q)).slice(0, 8);
+  box.innerHTML = list.length ? list.map(c => `<button class="btn" data-a="pickcli" data-n="${esc(c.nome)}">${esc(c.nome)}${c.att ? `<small>A/C: ${esc(c.att)}</small>` : ''}</button>`).join('') : '<p class="muted">Nenhum cliente salvo com esse nome. Pode continuar: ele será salvo ao gerar a cotação.</p>';
+}
+function renderCatList() {
+  const box = $('#catlist'); if (!box) return;
+  const q = up($('#f_cat').value);
+  if (!q) { box.innerHTML = ''; return; }
+  const list = DB.catalog.filter(c => up(c.pn).includes(q) || up(c.nome).includes(q)).slice(0, 5);
+  box.innerHTML = list.length ? list.map((c, i) => `<button class="btn sm" style="text-align:left" data-a="pickcat" data-pn="${esc(c.pn)}" data-nm="${esc(c.nome)}">${esc(c.nome)}<small>P/N ${esc(c.pn)} • último preço ${brl(c.unit)}</small></button>`).join('') : '<p class="muted">Nada encontrado. Preencha os campos abaixo.</p>';
+}
+function updateLive() {
+  const el = $('#live'); if (!el || !E) return;
+  const q = parseBR(E.qtd), u = toCents(E.unit);
+  el.textContent = (q > 0 && !isNaN(u)) ? `${qtdStr(q)} × R$ ${fmt(u)} = R$ ${fmt(Math.round(q * u))}` : '';
+}
+const clientHistory = () => DB.history.filter(h => up(h.cliente) === up(Q.cliente));
+const uniq = a => [...new Set(a.filter(Boolean))];
+
+const SCREENS = {
+  home() {
+    const draft = Q && (Q.cliente || Q.itens.length);
+    const needCfg = !up(DB.settings.banco) && !String(DB.settings.fone1 || '').trim();
+    return { title: 'Cotações', html: `
+      <h2>O que você quer fazer?</h2>
+      ${needCfg ? '<div class="note"><b>Primeiro uso:</b> peça para quem configurou o aplicativo carregar os dados da empresa em <b>Configurações</b>.</div>' : ''}
+      ${draft ? `<button class="btn pri" data-a="resume">Continuar a cotação em andamento<small>${esc(Q.cliente || 'sem cliente ainda')}</small></button>` : ''}
+      <button class="btn ${draft ? '' : 'pri'}" data-a="new">Nova cotação</button>
+      <button class="btn" data-a="hist">Cotações anteriores (${DB.history.length})</button>
+      <button class="btn" data-a="config">Configurações</button>
+      ${draft ? '<button class="btn danger" data-a="discard">Descartar a cotação em andamento</button>' : ''}` };
+  },
+  cliente() {
+    return { title: 'Nova cotação', back: () => goto('home'), next: () => nextStep(), nextLabel: 'Continuar',
+      valid: () => up(Q.cliente) ? '' : 'Digite o nome do cliente para continuar.',
+      html: `<h2>Para quem é a cotação?</h2>
+        <label for="f_cli">Digite o nome do cliente</label>
+        <input id="f_cli" data-f="cliente" value="${esc(Q.cliente)}" autocomplete="off" autocapitalize="characters">
+        <p class="muted" style="margin-top:1rem">Ou toque em um cliente já salvo:</p><div id="clist"></div>`,
+      bind: renderClientList };
+  },
+  contato() {
+    const c = DB.clients.find(c => up(c.nome) === up(Q.cliente));
+    return { title: 'Nova cotação', back: prevStep, next: nextStep,
+      valid: () => '',
+      html: `<h2>Aos cuidados de quem?</h2><p class="muted">Cliente: <b>${esc(Q.cliente)}</b></p>
+        <label for="f_att">Nome da pessoa (se quiser)</label>
+        <input id="f_att" data-f="att" value="${esc(Q.att)}" placeholder="Exemplo: SR. JOÃO" autocomplete="off" autocapitalize="characters">
+        ${c && c.att && up(c.att) !== up(Q.att) ? `<button class="btn sm" data-a="useatt" data-v="${esc(c.att)}">Usar: ${esc(c.att)}</button>` : ''}
+        <button class="btn" data-a="skipatt">Não informar ninguém</button>` };
+  },
+  aeronave() {
+    const past = uniq(clientHistory().map(h => h.aeronave));
+    return { title: 'Nova cotação', back: prevStep, next: nextStep, valid: () => '',
+      html: `<h2>É para alguma aeronave?</h2><p class="muted">Matrícula, por exemplo PT-ABC. É opcional.</p>
+        <label for="f_ae">Matrícula da aeronave</label>
+        <input id="f_ae" data-f="aeronave" value="${esc(Q.aeronave)}" placeholder="PT-ABC" autocomplete="off" autocapitalize="characters">
+        ${past.length ? `<p class="muted">Usadas antes por este cliente:</p><div class="chips">${past.map(a => `<button class="chip" data-a="useae" data-v="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}
+        <button class="btn" data-a="skipae">Não informar aeronave</button>` };
+  },
+  itens() {
+    const cards = Q.itens.map((it, i) => `<div class="card"><b>${qtdStr(it.qtd)} × ${esc(it.nome)}</b>
+      <div class="muted">P/N: ${esc(it.pn || '-')} • R$ ${fmt(it.unit)} cada</div>
+      <div class="tot">R$ ${fmt(lineCents(it))}</div>
+      <div class="row"><button class="btn sm" data-a="edititem" data-i="${i}">Alterar</button><button class="btn sm danger" data-a="delitem" data-i="${i}">Remover</button></div></div>`).join('');
+    return { title: 'Nova cotação', back: prevStep, next: nextStep,
+      valid: () => Q.itens.length ? '' : 'Adicione pelo menos um item.',
+      html: `<h2>Quais itens?</h2>${cards || '<p class="muted">Nenhum item ainda.</p>'}
+        <button class="btn ${Q.itens.length ? '' : 'pri'}" data-a="additem">+ Adicionar item</button>
+        ${Q.itens.length ? `<div class="ok"><span class="muted">Total dos itens</span><div class="tot" style="font-size:1.4rem">${brl(totalCents(Q))}</div></div>` : ''}` };
+  },
+  item() {
+    const isNew = V.idx == null;
+    return { title: isNew ? 'Adicionar item' : 'Alterar item', back: () => goto('itens'), backLabel: 'Cancelar', next: saveItem, nextLabel: 'Salvar item',
+      valid: () => {
+        const q = parseBR(E.qtd), u = toCents(E.unit);
+        if (!(q > 0)) return 'Informe a quantidade.';
+        if (!up(E.nome)) return 'Informe o nome do item.';
+        if (isNaN(u) || u <= 0) return 'Informe o valor de uma unidade (ex.: 1580,00).';
+        return '';
+      },
+      html: `<h2>${isNew ? 'Novo item' : 'Alterar item'}</h2>
+        ${DB.catalog.length ? `<label for="f_cat">Buscar item já usado (P/N ou nome)</label><input id="f_cat" placeholder="Digite para buscar" autocomplete="off"><div id="catlist"></div>` : ''}
+        <label for="e_q">Quantidade</label><input id="e_q" data-f="E.qtd" inputmode="decimal" value="${esc(E.qtd)}">
+        <label for="e_p">P/N (código da peça)</label><input id="e_p" data-f="E.pn" value="${esc(E.pn)}" autocomplete="off" autocapitalize="characters">
+        <label for="e_n">Nome do item</label><textarea id="e_n" data-f="E.nome" rows="2" autocapitalize="characters">${esc(E.nome)}</textarea>
+        <label for="e_u">Valor de uma unidade (R$)</label><input id="e_u" data-f="E.unit" inputmode="decimal" value="${esc(E.unit)}" placeholder="Exemplo: 1580,00">
+        <p class="muted">Digite o valor com vírgula nos centavos. Exemplo: 4,50</p>
+        <div class="ok"><span class="muted">Total deste item</span><div class="tot" id="live"></div></div>`,
+      bind: updateLive };
+  },
+  preco() {
+    const on = Q.espOn;
+    return { title: 'Nova cotação', back: prevStep, next: nextStep,
+      valid: () => { if (!Q.espOn) return ''; const c = toCents(Q.espTxt); return (isNaN(c) || c <= 0) ? 'Informe o preço especial (ex.: 900,00).' : ''; },
+      html: `<h2>Preço especial?</h2>
+        <div class="ok"><span class="muted">Total calculado dos itens</span><div class="tot" style="font-size:1.4rem">${brl(totalCents(Q))}</div></div>
+        <p class="muted">Use o preço especial se você combinou um valor fechado diferente da soma.</p>
+        <button class="btn ${on ? '' : 'sel'}" data-a="espoff">Não, usar o total acima</button>
+        <button class="btn ${on ? 'sel' : ''}" data-a="espon">Sim, informar um preço especial</button>
+        ${on ? `<label for="f_esp">Preço especial (R$)</label><input id="f_esp" data-f="espTxt" inputmode="decimal" value="${esc(Q.espTxt)}" placeholder="Exemplo: 900,00">` : ''}` };
+  },
+  entrega() {
+    const e = Q.entrega, t = e.tipo;
+    const opt = (v, l, sub) => `<button class="btn ${t === v ? 'sel' : ''}" data-a="tipo" data-v="${v}">${l}${sub ? `<small>${sub}</small>` : ''}</button>`;
+    const pastT = uniq(DB.history.map(h => h.entrega && h.entrega.transp));
+    let extra = '';
+    if (t === 'sedex') extra = `
+      <label for="f_dest">Cidade e estado de destino</label><input id="f_dest" data-f="ent.dest" value="${esc(e.dest)}" placeholder="Exemplo: RIO BRILHANTE - MS" autocapitalize="characters">
+      <label>Quantos envios (Sedex)?</label>
+      <div class="pillrow"><button class="btn" data-a="envm">−</button><div class="v">${parseInt(e.envios, 10) || 1}</div><button class="btn" data-a="envp">+</button></div>`;
+    if (t === 'transp') extra = `
+      <label for="f_tr">Nome da transportadora</label><input id="f_tr" data-f="ent.transp" value="${esc(e.transp)}" placeholder="Exemplo: VIAÇÃO GARCIA" autocapitalize="characters">
+      ${pastT.length ? `<div class="chips">${pastT.map(x => `<button class="chip" data-a="usetr" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
+      <label for="f_dest2">Destino (se quiser)</label><input id="f_dest2" data-f="ent.dest" value="${esc(e.dest)}" autocapitalize="characters">`;
+    if (t === 'outro') extra = `<label for="f_ou">Escreva o prazo de entrega</label><input id="f_ou" data-f="ent.outro" value="${esc(e.outro)}" autocapitalize="characters">`;
+    if (t === 'sedex' || t === 'transp') extra += `
+      <label>O frete é pago por você?</label>
+      <div class="row"><button class="btn ${e.fretePago ? 'sel' : ''}" data-a="frete" data-v="1">Sim, frete pago</button><button class="btn ${e.fretePago ? '' : 'sel'}" data-a="frete" data-v="0">Não</button></div>`;
+    return { title: 'Nova cotação', back: prevStep, next: nextStep,
+      valid: () => {
+        if (!t) return 'Escolha como será a entrega.';
+        if (t === 'sedex' && !up(e.dest)) return 'Informe a cidade e o estado de destino.';
+        if (t === 'transp' && !up(e.transp)) return 'Informe o nome da transportadora.';
+        if (t === 'outro' && !up(e.outro)) return 'Escreva o prazo de entrega.';
+        return '';
+      },
+      html: `<h2>Como será a entrega?</h2>
+        ${opt('imediato', 'Entrega imediata')}${opt('entregue', 'Material já entregue')}
+        ${opt('sedex', 'Envio por Sedex')}${opt('transp', 'Envio por transportadora')}${opt('outro', 'Outro (escrever)')}
+        ${extra}` };
+  },
+  datas() {
+    return { title: 'Nova cotação', back: prevStep, next: nextStep,
+      valid: () => validISO(Q.data) ? '' : 'Informe a data da cotação.',
+      html: `<h2>Datas</h2>
+        <label for="f_dt">Data da cotação</label><input id="f_dt" type="date" data-f="data" value="${esc(Q.data)}">
+        <label>Por quantos dias a proposta vale?</label>
+        <div class="pillrow"><button class="btn" data-a="diam">−</button><div class="v" id="dias">${Q.dias} dias</div><button class="btn" data-a="diap">+</button></div>
+        <div class="ok">A proposta vale até <b id="valdate">${validISO(Q.data) ? br(addDays(Q.data, Q.dias)) : '-'}</b></div>` };
+  },
+  conferir() {
+    const { prazo, dep } = entregaTexts(Q.entrega);
+    const E2 = Q.espOn ? toCents(Q.espTxt) : null;
+    const tmp = Object.assign({}, Q, { especial: E2 });
+    const alt = s => `<button class="alt" data-a="alt" data-s="${s}">Alterar</button>`;
+    const nextNum = (Q.numero ? numTxt(Q) : ((DB.counters[Q.data.slice(0, 4)] || 0) + 1) + '/' + Q.data.slice(0, 4));
+    return { title: 'Conferir', back: () => goto('datas'), next: gerar, nextLabel: 'Gerar PDF',
+      valid: () => '',
+      html: `<h2>Está tudo certo?</h2><p class="muted">Confira antes de gerar o PDF. Cotação nº <b>${esc(nextNum)}</b></p>
+        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}</div>
+        <div class="sec"><div class="h"><b>Itens</b>${alt('itens')}</div>
+          ${Q.itens.map(it => `<div style="margin:.4rem 0">${qtdStr(it.qtd)} × ${esc(up(it.nome))}<div class="muted">P/N ${esc(up(it.pn) || '-')} • R$ ${fmt(it.unit)} cada = <b>R$ ${fmt(lineCents(it))}</b></div></div>`).join('')}
+          <div class="tot right">Total: ${brl(totalCents(tmp))}</div></div>
+        ${E2 != null ? `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div><span class="tot">${brl(E2)}</span></div>` : `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div>Não</div>`}
+        <div class="sec"><div class="h"><b>Entrega</b>${alt('entrega')}</div>${esc(prazo)}<div class="muted">${esc(dep)}</div></div>
+        <div class="sec"><div class="h"><b>Datas</b>${alt('datas')}</div>Cotação: ${br(Q.data)}<br>Válida até: ${br(addDays(Q.data, Q.dias))}</div>
+        <div class="ok"><span class="muted">Valor a depositar</span><div class="tot" style="font-size:1.5rem">${brl(finalCents(tmp))}</div></div>` };
+  },
+  pronto() {
+    const q = PDF.q;
+    return { title: 'Pronto', html: `
+      <div class="ok"><h2 style="margin:0">Cotação ${esc(numTxt(q))} pronta</h2><div>${esc(q.cliente)} • ${brl(finalCents(q))}</div></div>
+      <button class="btn pri" data-a="share">Enviar pelo WhatsApp</button>
+      <button class="btn" data-a="viewpdf">Ver o PDF</button>
+      <button class="btn" data-a="savepdf">Salvar o PDF no aparelho</button>
+      <p class="muted">No botão do WhatsApp, escolha o aplicativo e o contato. Se o seu aparelho não permitir, o PDF será salvo e você pode anexá-lo no WhatsApp.</p>
+      <button class="btn" data-a="fixq">Corrigir esta cotação (mantém o número)</button>
+      <button class="btn" data-a="new">Nova cotação</button>
+      <button class="btn" data-a="home">Voltar ao início</button>` };
+  },
+  hist() {
+    const list = DB.history.slice().sort((a, b) => (b.ano - a.ano) || (b.numero - a.numero));
+    return { title: 'Cotações anteriores', back: () => goto('home'), backLabel: 'Início',
+      html: `<h2>Cotações anteriores</h2>${list.length ? '' : '<p class="muted">Ainda não há cotações salvas.</p>'}
+        ${list.map(h => `<button class="btn" data-a="detail" data-id="${esc(h.id)}">${esc(numTxt(h))} — ${esc(h.cliente)}<small>${br(h.data)} • ${brl(finalCents(h))}</small></button>`).join('')}` };
+  },
+  detail() {
+    const h = DB.history.find(x => x.id === V.id);
+    if (!h) { return { title: 'Cotação', back: () => goto('hist'), html: '<p>Cotação não encontrada.</p>' }; }
+    return { title: 'Cotação ' + numTxt(h), back: () => goto('hist'), html: `
+      <h2>${esc(numTxt(h))} — ${esc(h.cliente)}</h2>
+      <p class="muted">${br(h.data)} • ${brl(finalCents(h))}</p>
+      ${h.itens.map(it => `<div class="card">${qtdStr(it.qtd)} × ${esc(up(it.nome))}<div class="muted">P/N ${esc(up(it.pn) || '-')} • R$ ${fmt(it.unit)}</div></div>`).join('')}
+      <button class="btn pri" data-a="regen" data-id="${esc(h.id)}">Gerar o PDF / enviar no WhatsApp</button>
+      <button class="btn" data-a="clone" data-id="${esc(h.id)}">Usar como base para uma nova cotação</button>
+      <button class="btn" data-a="fixhist" data-id="${esc(h.id)}">Corrigir esta cotação</button>
+      <button class="btn danger" data-a="delhist" data-id="${esc(h.id)}">Apagar esta cotação</button>` };
+  },
+  config() {
+    const S = DB.settings;
+    const f = (k, l, p) => `<label for="c_${k}">${l}</label><input id="c_${k}" data-f="cfg.${k}" value="${esc(S[k])}" ${p ? `placeholder="${esc(p)}"` : ''} autocomplete="off">`;
+    const yr = String(new Date().getFullYear());
+    return { title: 'Configurações', back: () => goto('home'), backLabel: 'Concluído',
+      html: `<h2>Configurações</h2>
+        <div class="note">Estes dados aparecem no PDF. Normalmente são preenchidos uma única vez, por quem instala o aplicativo.</div>
+        <h3>Telefones (WhatsApp)</h3>${f('fone1', 'Telefone 1', '(43) 99999-9999')}${f('fone2', 'Telefone 2 (opcional)')}
+        <h3>Dados para depósito</h3>${f('banco', 'Banco', 'Exemplo: BRADESCO')}${f('agencia', 'Agência')}${f('conta', 'Conta corrente')}${f('doc', 'CPF ou CNPJ do titular')}${f('titular', 'Nome do titular')}
+        <h3>Assinatura no final do PDF</h3>${f('assinatura', 'Texto da assinatura', 'Exemplo: PATRÍCIA - LONDRINA')}
+        <h3>Numeração e validade</h3>
+        <label for="c_num">Última cotação feita em ${yr} (a próxima será +1)</label><input id="c_num" inputmode="numeric" value="${DB.counters[yr] || 0}" data-a-change="counter">
+        <label for="c_val">Validade padrão (dias)</label><input id="c_val" inputmode="numeric" data-f="cfg.validade" value="${esc(S.validade)}">
+        <h3>Dados do aplicativo</h3>
+        <button class="btn" data-a="lista" data-k="clients">Clientes salvos (${DB.clients.length})</button>
+        <button class="btn" data-a="lista" data-k="catalog">Itens salvos (${DB.catalog.length})</button>
+        <button class="btn" data-a="backup">Fazer backup (salvar arquivo)</button>
+        <button class="btn" data-a="restore">Carregar arquivo de dados / backup</button>
+        <p class="muted">O backup guarda tudo (clientes, itens, cotações e configurações). Guarde o arquivo em local seguro, como o Google Drive.</p>` };
+  },
+  lista() {
+    const k = V.k, arr = DB[k];
+    const rows = arr.map((x, i) => k === 'clients'
+      ? `<div class="card"><b>${esc(x.nome)}</b>${x.att ? `<div class="muted">A/C: ${esc(x.att)}</div>` : ''}<button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`
+      : `<div class="card"><b>${esc(x.nome)}</b><div class="muted">P/N ${esc(x.pn || '-')} • R$ ${fmt(x.unit)}</div><button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`).join('');
+    return { title: k === 'clients' ? 'Clientes salvos' : 'Itens salvos', back: () => goto('config'), html: `<h2>${k === 'clients' ? 'Clientes salvos' : 'Itens salvos'}</h2>${rows || '<p class="muted">Nada salvo ainda.</p>'}` };
+  }
+};
+
+/* ---------- ações ---------- */
+function saveItem() {
+  const it = { qtd: parseBR(E.qtd), pn: up(E.pn), nome: up(E.nome), unit: toCents(E.unit) };
+  if (V.idx == null) Q.itens.push(it); else Q.itens[V.idx] = it;
+  saveDraft(); goto('itens');
+}
+function startItem(i) {
+  const it = i == null ? null : Q.itens[i];
+  E = it ? { qtd: String(it.qtd).replace('.', ','), pn: it.pn, nome: it.nome, unit: fmt(it.unit) } : { qtd: '1', pn: '', nome: '', unit: '' };
+  goto('item', { idx: i });
+}
+async function gerar() {
+  const q = JSON.parse(JSON.stringify(Q));
+  q.especial = q.espOn ? toCents(q.espTxt) : null;
+  delete q.espOn; delete q.espTxt; delete q._step;
+  const isFix = !!q.numero;
+  const yr = q.data.slice(0, 4);
+  if (!isFix) { q.numero = (DB.counters[yr] || 0) + 1; q.ano = +yr; }
+  q.criadaEm = q.criadaEm || Date.now();
+  $('#nav').innerHTML = '<div class="btn" style="text-align:center">Gerando o PDF…</div>';
+  let blob;
+  try { blob = await buildPdf(q); }
+  catch (e) { console.error(e); toast('Não foi possível gerar o PDF. Tente de novo.'); refreshNav(); return; }
+  if (!isFix) DB.counters[yr] = q.numero;
+  const i = DB.history.findIndex(h => h.id === q.id);
+  if (i >= 0) DB.history[i] = q; else DB.history.push(q);
+  const now = Date.now();
+  let c = DB.clients.find(c => up(c.nome) === up(q.cliente));
+  if (!c) { c = { nome: up(q.cliente) }; DB.clients.push(c); }
+  c.att = up(q.att); c.last = now;
+  q.itens.forEach(it => {
+    const k = DB.catalog.find(x => (it.pn && up(x.pn) === it.pn) || (!it.pn && !x.pn && up(x.nome) === it.nome));
+    if (k) { k.nome = it.nome; k.unit = it.unit; } else DB.catalog.push({ pn: it.pn, nome: it.nome, unit: it.unit });
+  });
+  saveDB(); clearDraft();
+  setPdf(q, blob); goto('pronto');
+}
+function setPdf(q, blob) {
+  if (PDF && PDF.url) URL.revokeObjectURL(PDF.url);
+  PDF = { q, blob, url: URL.createObjectURL(blob), name: `Cotacao_${String(q.numero).padStart(3, '0')}-${q.ano}_${slug(q.cliente)}.pdf` };
+}
+function downloadPdf() { const a = document.createElement('a'); a.href = PDF.url; a.download = PDF.name; document.body.appendChild(a); a.click(); a.remove(); }
+async function sharePdf() {
+  const file = new File([PDF.blob], PDF.name, { type: 'application/pdf' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Cotação ' + numTxt(PDF.q), text: 'Cotação ' + numTxt(PDF.q) });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  downloadPdf();
+  toast('O PDF foi salvo. Abra o WhatsApp e anexe o arquivo na conversa.');
+}
+function cloneToDraft(h, keepNumber) {
+  const q = JSON.parse(JSON.stringify(h));
+  q.espOn = q.especial != null; q.espTxt = q.especial != null ? fmt(q.especial) : '';
+  if (!keepNumber) { q.id = uid(); q.numero = null; q.ano = null; q.data = todayISO(); q.dias = +DB.settings.validade || 14; delete q.criadaEm; }
+  q._step = 'conferir'; Q = q; saveDraft(); FC = false; goto('conferir');
+}
+function download(name, text, type) { const b = new Blob([text], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+
+const ACT = {
+  fs() { DB.ui.fs = (DB.ui.fs + 1) % 4; applyFs(); saveDB(); },
+  navback() { CUR.back && CUR.back(); },
+  navnext() { if (CUR.valid && CUR.valid()) return; CUR.next && CUR.next(); },
+  new(d) { if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e começar uma nova?')) return; Q = blankQuote(); saveDraft(); FC = false; goto('cliente'); },
+  resume() { FC = false; goto(Q._step && STEPS.includes(Q._step) ? Q._step : 'cliente'); },
+  discard() { if (confirm('Descartar a cotação em andamento?')) { clearDraft(); goto('home'); } },
+  hist() { goto('hist'); }, home() { goto('home'); }, config() { goto('config'); },
+  pickcli(d) { const c = DB.clients.find(c => c.nome === d.n); Q.cliente = d.n; Q.att = c ? (c.att || '') : ''; saveDraft(); nextStep(); },
+  useatt(d) { Q.att = d.v; saveDraft(); nextStep(); },
+  skipatt() { Q.att = ''; saveDraft(); nextStep(); },
+  useae(d) { Q.aeronave = d.v; saveDraft(); nextStep(); },
+  skipae() { Q.aeronave = ''; saveDraft(); nextStep(); },
+  additem() { startItem(null); },
+  edititem(d) { startItem(+d.i); },
+  delitem(d) { if (confirm('Remover este item?')) { Q.itens.splice(+d.i, 1); saveDraft(); render(); } },
+  pickcat(d) { const c = DB.catalog.find(c => c.pn === d.pn && c.nome === d.nm); if (!c) return; E.pn = c.pn; E.nome = c.nome; E.unit = fmt(c.unit); $('#e_p').value = E.pn; $('#e_n').value = E.nome; $('#e_u').value = E.unit; $('#f_cat').value = ''; renderCatList(); updateLive(); refreshNav(); },
+  espon() { Q.espOn = true; saveDraft(); render(); setTimeout(() => { const e = $('#f_esp'); e && e.focus(); }, 50); },
+  espoff() { Q.espOn = false; saveDraft(); render(); },
+  tipo(d) { Q.entrega.tipo = d.v; saveDraft(); render(); },
+  envm() { Q.entrega.envios = Math.max(1, (parseInt(Q.entrega.envios, 10) || 1) - 1); saveDraft(); render(); },
+  envp() { Q.entrega.envios = Math.min(20, (parseInt(Q.entrega.envios, 10) || 1) + 1); saveDraft(); render(); },
+  frete(d) { Q.entrega.fretePago = d.v === '1'; saveDraft(); render(); },
+  usetr(d) { Q.entrega.transp = d.v; saveDraft(); render(); },
+  diam() { Q.dias = Math.max(1, Q.dias - 1); saveDraft(); $('#dias').textContent = Q.dias + ' dias'; $('#valdate').textContent = br(addDays(Q.data, Q.dias)); },
+  diap() { Q.dias = Math.min(365, Q.dias + 1); saveDraft(); $('#dias').textContent = Q.dias + ' dias'; $('#valdate').textContent = br(addDays(Q.data, Q.dias)); },
+  alt(d) { FC = true; goto(d.s); },
+  share() { sharePdf(); },
+  viewpdf() { window.open(PDF.url, '_blank'); },
+  savepdf() { downloadPdf(); },
+  fixq() { cloneToDraft(PDF.q, true); },
+  detail(d) { goto('detail', { id: d.id }); },
+  async regen(d) { const h = DB.history.find(x => x.id === d.id); try { setPdf(h, await buildPdf(h)); goto('pronto'); } catch (e) { toast('Não foi possível gerar o PDF.'); } },
+  clone(d) { if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e usar esta como base?')) return; cloneToDraft(DB.history.find(x => x.id === d.id), false); },
+  fixhist(d) { if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e abrir esta?')) return; cloneToDraft(DB.history.find(x => x.id === d.id), true); },
+  delhist(d) { if (confirm('Apagar esta cotação do histórico? Isso não pode ser desfeito.')) { DB.history = DB.history.filter(x => x.id !== d.id); saveDB(); goto('hist'); } },
+  lista(d) { goto('lista', { k: d.k }); },
+  dellist(d) { if (confirm('Apagar este registro?')) { DB[V.k].splice(+d.i, 1); saveDB(); render(); } },
+  backup() { download('backup_cotacoes_' + todayISO() + '.json', JSON.stringify(Object.assign({}, DB, { _app: 'cotacoes', _v: 1 })), 'application/json'); toast('Backup salvo. Guarde o arquivo em local seguro.'); },
+  restore() { $('#filepick').value = ''; $('#filepick').click(); }
+};
+document.addEventListener('click', e => {
+  $('#toast').style.display = 'none';
+  const b = e.target.closest('[data-a]'); if (!b || b.disabled) return;
+  const f = ACT[b.dataset.a]; if (f) f(b.dataset);
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.aChange === 'counter') {
+    const yr = String(new Date().getFullYear()); const n = parseInt(t.value, 10);
+    if (!isNaN(n) && n >= 0) { DB.counters[yr] = n; saveDB(); toast('Numeração atualizada. A próxima será ' + (n + 1) + '/' + yr + '.'); }
+  }
+});
+$('#filepick').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    try {
+      const x = JSON.parse(fr.result);
+      if (!x || typeof x !== 'object' || !('settings' in x || 'history' in x || 'clients' in x)) throw new Error('formato');
+      if (!confirm('Carregar este arquivo? Os dados atuais deste aparelho serão substituídos.')) return;
+      const ui = DB.ui; DB = normDB(x); DB.ui = ui; saveDB(); toast('Dados carregados com sucesso.'); goto('config');
+    } catch (err) { toast('Este arquivo não parece ser um backup válido.'); }
+  };
+  fr.readAsText(f);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'file') { e.preventDefault(); e.target.blur(); } });
+
+const FS = [18, 20, 23, 26];
+function applyFs() { document.documentElement.style.setProperty('--fs', FS[DB.ui.fs % 4] + 'px'); }
+applyFs();
+if (Q && !Q.entrega) Q = null;
+window.__cot = { fmt, parseBR, toCents, buildPdf, entregaTexts, get DB() { return DB; }, normDB, setDB(x) { DB = normDB(x); saveDB(); } };
+render();
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+})();
+</script>
+</body>
+</html>

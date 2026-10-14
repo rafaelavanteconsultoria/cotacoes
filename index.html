@@ -236,7 +236,7 @@ const catKey = x => x.pn ? 'PN:' + up(x.pn) : 'NM:' + up(x.nome);
 
 /* ---------- cotação em andamento ---------- */
 const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), ptaxData: todayISO(), dias: +DB.settings.validade || 14,
-  cliente: '', att: '', aeronave: '', serie: '', obs: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
+  cliente: '', att: '', aeronave: '', obs: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
   entrega: { tipo: '', dest: '', transp: '', envios: 1, fretePago: true, outro: '' }, _step: 'cliente' });
 let Q = store.get('cot_draft', null);
 const saveDraft = () => { if (Q) store.set('cot_draft', Q); };
@@ -289,7 +289,6 @@ async function buildPdf(q) {
   let last = y;
   if (up(q.att)) { y += 12; T('ATT. ' + up(q.att), L, y, { b: 1 }); last = y; }
   if (up(q.aeronave)) { y += 12; T(up(q.aeronave), 297.6, y, { b: 1, al: 'center' }); last = y; }
-  if (up(q.serie)) { y += 12; T('Nº SÉRIE: ' + up(q.serie), 297.6, y, { b: 1, al: 'center' }); last = y; }
   y = Math.max(198, last + 15);
   T('COTAÇÃO:' + numTxt(q), L, y, { b: 1 });
   y += 12; T('CONFORME SUA SOLICITAÇÃO ESTAMOS COTANDO MATERIAL ABAIXO:', L, y);
@@ -303,7 +302,7 @@ async function buildPdf(q) {
   head();
   font(false); doc.setFontSize(9);
   for (const it of q.itens) {
-    const nm = doc.splitTextToSize(up(it.nome), 148), pn = doc.splitTextToSize(up(it.pn), 82);
+    const nm = doc.splitTextToSize(up(it.nome) + (up(it.serie) ? '\nN/S: ' + up(it.serie) : ''), 148), pn = doc.splitTextToSize(up(it.pn), 82);
     const n = Math.max(nm.length, pn.length, 1);
     if (y + n * LH > 790) { doc.addPage(); y = 55; head(); }
     T(qtdStr(it.qtd), 111, y, { al: 'right' });
@@ -581,9 +580,7 @@ const SCREENS = {
         <label for="f_ae">Matrícula da aeronave</label>
         <input id="f_ae" data-f="aeronave" value="${esc(Q.aeronave)}" placeholder="PT-ABC" autocomplete="off" autocapitalize="characters">
         ${past.length ? `<p class="muted">Usadas antes por este cliente:</p><div class="chips">${past.map(a => `<button class="chip" data-a="useae" data-v="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}
-        <button class="btn" data-a="skipae">Não informar aeronave</button>
-        <label for="f_se">Nº de série do produto (opcional)</label>
-        <input id="f_se" data-f="serie" value="${esc(Q.serie || '')}" placeholder="Deixe em branco se não houver" autocomplete="off" autocapitalize="characters">` };
+        <button class="btn" data-a="skipae">Não informar aeronave</button>` };
   },
   obs() {
     return { title: 'Nova cotação', back: prevStep, next: nextStep, valid: () => '',
@@ -594,7 +591,7 @@ const SCREENS = {
   },
   itens() {
     const cards = Q.itens.map((it, i) => `<div class="card"><b>${qtdStr(it.qtd)} × ${esc(it.nome)}</b>
-      <div class="muted">P/N: ${esc(it.pn || '-')} • ${money(Q, it.unit)} cada</div>
+      <div class="muted">P/N: ${esc(it.pn || '-')}${it.serie ? ' • N/S: ' + esc(it.serie) : ''} • ${money(Q, it.unit)} cada</div>
       <div class="tot">${money(Q, lineCents(it))}</div>
       <div class="row"><button class="btn sm" data-a="edititem" data-i="${i}">Alterar</button><button class="btn sm danger" data-a="delitem" data-i="${i}">Remover</button></div></div>`).join('');
     return { title: 'Nova cotação', back: prevStep, next: nextStep,
@@ -618,6 +615,7 @@ const SCREENS = {
         <label for="e_q">Quantidade</label><input id="e_q" data-f="E.qtd" inputmode="decimal" value="${esc(E.qtd)}">
         <label for="e_p">P/N (código da peça)</label><input id="e_p" data-f="E.pn" value="${esc(E.pn)}" autocomplete="off" autocapitalize="characters">
         <label for="e_n">Nome do item</label><textarea id="e_n" data-f="E.nome" rows="2" autocapitalize="characters">${esc(E.nome)}</textarea>
+        <label for="e_s">Nº de série do produto (opcional)</label><input id="e_s" data-f="E.serie" value="${esc(E.serie || '')}" placeholder="Deixe em branco se não houver" autocomplete="off" autocapitalize="characters">
         <label for="e_u">Valor de uma unidade (${sym(Q)})</label><input id="e_u" data-f="E.unit" inputmode="decimal" value="${esc(E.unit)}" placeholder="Exemplo: 1580,00">
         <p class="muted">Digite o valor com vírgula nos centavos. Exemplo: 4,50</p>
         <div class="ok"><span class="muted">Total deste item</span><div class="tot" id="live"></div></div>`,
@@ -687,10 +685,10 @@ const SCREENS = {
     return { title: 'Conferir', back: () => goto('datas'), next: gerar, nextLabel: 'Gerar PDF',
       valid: () => '',
       html: `<h2>Está tudo certo?</h2><p class="muted">Confira antes de gerar o PDF. Cotação nº <b>${esc(nextNum)}</b></p>
-        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${cNovo ? tag('cliente novo, será cadastrado') : ''}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}${up(Q.serie) ? `<br>Nº série: ${esc(up(Q.serie))}` : ''}${hasCli ? `<div class="muted">Dados do cadastro (não vão no PDF): ${CLI_KEYS.filter(k => Q.cli[k]).map(k => esc(CLI_LBL[k])).join(', ')}</div>` : ''}</div>
+        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${cNovo ? tag('cliente novo, será cadastrado') : ''}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}${hasCli ? `<div class="muted">Dados do cadastro (não vão no PDF): ${CLI_KEYS.filter(k => Q.cli[k]).map(k => esc(CLI_LBL[k])).join(', ')}</div>` : ''}</div>
         <div class="sec"><div class="h"><b>Moeda</b>${alt('moeda')}</div>${isUsd(Q) ? 'Dólar (US$) — depósito em reais' : 'Reais (R$)'}</div>
         <div class="sec"><div class="h"><b>Itens</b>${alt('itens')}</div>
-          ${Q.itens.map(it => `<div style="margin:.4rem 0">${qtdStr(it.qtd)} × ${esc(up(it.nome))}${itNovo(it) ? tag('item novo') : ''}<div class="muted">P/N ${esc(up(it.pn) || '-')} • ${money(Q, it.unit)} cada = <b>${money(Q, lineCents(it))}</b></div></div>`).join('')}
+          ${Q.itens.map(it => `<div style="margin:.4rem 0">${qtdStr(it.qtd)} × ${esc(up(it.nome))}${itNovo(it) ? tag('item novo') : ''}<div class="muted">P/N ${esc(up(it.pn) || '-')}${it.serie ? ' • N/S ' + esc(up(it.serie)) : ''} • ${money(Q, it.unit)} cada = <b>${money(Q, lineCents(it))}</b></div></div>`).join('')}
           <div class="tot right">Total: ${money(Q, totalCents(tmp))}</div></div>
         ${E2 != null ? `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div><span class="tot">${money(Q, E2)}</span></div>` : `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div>Não</div>`}
         <div class="sec"><div class="h"><b>Entrega</b>${alt('entrega')}</div>${esc(prazo)}<div class="muted">${esc(dep)}</div></div>
@@ -766,13 +764,13 @@ const SCREENS = {
 
 /* ---------- ações ---------- */
 function saveItem() {
-  const it = { qtd: parseBR(E.qtd), pn: up(E.pn), nome: up(E.nome), unit: toCents(E.unit) };
+  const it = { qtd: parseBR(E.qtd), pn: up(E.pn), nome: up(E.nome), unit: toCents(E.unit), serie: up(E.serie) };
   if (V.idx == null) Q.itens.push(it); else Q.itens[V.idx] = it;
   saveDraft(); goto('itens');
 }
 function startItem(i) {
   const it = i == null ? null : Q.itens[i];
-  E = it ? { qtd: String(it.qtd).replace('.', ','), pn: it.pn, nome: it.nome, unit: fmt(it.unit) } : { qtd: '1', pn: '', nome: '', unit: '' };
+  E = it ? { qtd: String(it.qtd).replace('.', ','), pn: it.pn, nome: it.nome, unit: fmt(it.unit), serie: it.serie || '' } : { qtd: '1', pn: '', nome: '', unit: '', serie: '' };
   goto('item', { idx: i });
 }
 async function gerar() {

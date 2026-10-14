@@ -1,4 +1,4 @@
-const C = 'cotacoes-v5';
+const C = 'cotacoes-v7';
 const FILES = ['./', 'index.html', 'manifest.webmanifest', 'lib/jspdf.umd.min.js', 'header.jpg', 'logo.png', 'config.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png', 'icons/icon-maskable-512.png'];
 self.addEventListener('install', e => {

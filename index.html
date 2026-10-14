@@ -664,23 +664,39 @@ function askYN(html) {
 }
 const ymd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 const usDate = iso => { const [y, m, d] = iso.split('-'); return m + '-' + d + '-' + y; };
+async function ptaxGet(url) {
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return (await r.json()).value || [];
+  } finally { clearTimeout(tm); }
+}
 async function ptaxFetch() {
   const info = () => { const el = $('#ptaxinfo'); if (el) el.textContent = Q.ptaxInfo || ''; };
   Q.ptaxInfo = 'Buscando a PTAX de compra no Banco Central…'; info();
+  const B = 'https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/';
+  let end = validISO(Q.data) ? Q.data : todayISO(); if (end > todayISO()) end = todayISO();
+  const ini = addDays(end, -10);
+  let v = null, err = '';
   try {
-    let end = validISO(Q.data) ? Q.data : todayISO(); if (end > todayISO()) end = todayISO();
-    const ini = addDays(end, -10);
-    const url = "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@di,dataFinal=@df)?@di='" + usDate(ini) + "'&@df='" + usDate(end) + "'&$orderby=dataHoraCotacao%20desc&$top=50&$format=json&$select=cotacaoCompra,dataHoraCotacao";
-    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 12000);
-    const r = await fetch(url, { signal: ctl.signal }); clearTimeout(tm);
-    if (!r.ok) throw new Error('http ' + r.status);
-    const j = await r.json(); const v = j.value && j.value[0];
-    if (!v || !(v.cotacaoCompra > 0)) throw new Error('vazio');
+    const l = await ptaxGet(B + "CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='" + usDate(ini) + "'&@dataFinalCotacao='" + usDate(end) + "'&$format=json&$select=cotacaoCompra,dataHoraCotacao");
+    l.sort((a, b) => String(b.dataHoraCotacao).localeCompare(String(a.dataHoraCotacao)));
+    v = l[0] || null;
+  } catch (e) { err = e && e.message; }
+  for (let k = 0; !v && k < 8; k++) {
+    try {
+      const l = await ptaxGet(B + "CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao='" + usDate(addDays(end, -k)) + "'&$format=json&$select=cotacaoCompra,dataHoraCotacao");
+      l.sort((a, b) => String(b.dataHoraCotacao).localeCompare(String(a.dataHoraCotacao)));
+      v = l[0] || null;
+    } catch (e) { err = err || (e && e.message); if (k === 0 && err) break; }
+  }
+  if (v && v.cotacaoCompra > 0) {
     Q.ptaxTxt = String(v.cotacaoCompra.toFixed(4)).replace('.', ',');
     Q.ptaxInfo = 'Sugerida: PTAX de compra do Banco Central de ' + br(v.dataHoraCotacao.slice(0, 10)) + ' (último boletim). Você pode alterar.';
-  } catch (e) {
-    console.log('PTAX erro', e && e.message);
-    Q.ptaxInfo = 'Não foi possível buscar agora (sem internet?). Digite a cotação do dólar.';
+  } else {
+    console.log('PTAX erro', err);
+    Q.ptaxInfo = 'Não foi possível buscar agora' + (err ? ' (' + err + ')' : '') + '. Digite a cotação do dólar.';
   }
   saveDraft();
   if (V.name === 'moeda') { const i = $('#f_ptax'); if (i) i.value = Q.ptaxTxt; info(); ptaxEx(); refreshNav(); }

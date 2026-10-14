@@ -2,6 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://olinda.bcb.gov.br https://viacep.com.br; object-src 'self' blob:; frame-src 'self' blob:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cotações</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -84,6 +86,7 @@ textarea{resize:vertical}
 </div>
 <input type="file" id="filepick" accept=".json,application/json" style="display:none">
 <script src="lib/jspdf.umd.min.js"></script>
+<script src="config.js"></script>
 <script>
 (() => {
 'use strict';
@@ -153,9 +156,87 @@ let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3000); }
 const saveDB = () => { if (!store.set('cot_db', DB)) toast('Atenção: não foi possível salvar neste aparelho. Faça um backup.'); };
 
+/* ---------- sincronização (Planilha Google) ---------- */
+const SYNC_URL = () => String(window.COT_URL || '').trim();
+const syncOn = () => !!SYNC_URL();
+let AUTH = store.get('cot_auth', null);
+let SYNCST = { msg: '', ok: false };
+const can = k => !syncOn() || !!(AUTH && (AUTH.master || (AUTH.perm && AUTH.perm[k])));
+const isMaster = () => !syncOn() || !!(AUTH && AUTH.master);
+const PERM_INFO = [
+  ['cotar', 'Criar cotações', 'Faz novas cotações e cadastra clientes e itens ao usar.'],
+  ['historico', 'Ver cotações anteriores', 'Consulta e gera de novo o PDF de cotações já feitas.'],
+  ['corrigir', 'Corrigir cotações emitidas', 'Altera uma cotação já emitida (mantém o número).'],
+  ['cadastros', 'Ver clientes e itens salvos', 'Abre as listas de clientes e de itens.'],
+  ['doc', 'Ver CPF/CNPJ completo', 'Sem esta opção, o CPF/CNPJ aparece escondido (***00).'],
+  ['apagar', 'Apagar registros', 'Apaga cotações, clientes e itens.'],
+  ['exportar', 'Exportar dados', 'Exporta planilhas e faz backup (leva os dados para fora do sistema).'],
+  ['lgpd', 'Atender pedidos de titulares (LGPD)', 'Exporta ou apaga os dados pessoais de um cliente.'],
+  ['empresa', 'Dados da empresa e numeração', 'Muda telefones, banco, assinatura, validade e a numeração.']
+];
+const PRESETS = {
+  consulta: { historico: 1, cadastros: 1 },
+  vendedor: { cotar: 1, historico: 1, cadastros: 1 },
+  gerente: { cotar: 1, historico: 1, corrigir: 1, cadastros: 1, doc: 1, exportar: 1, lgpd: 1 },
+  nenhuma: {}
+};
+const strongPw = x => String(x || '').length >= 8 && /[A-Za-z]/.test(x) && /\d/.test(x);
+const gerarSenha = () => { const L = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ', N = '23456789'; const r = crypto.getRandomValues(new Uint8Array(10)); let t = ''; for (let i = 0; i < 8; i++) t += L[r[i] % L.length]; return t + N[r[8] % 8] + N[r[9] % 8]; };
+const dtBr = ms => ms ? new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+function setAuth(u, token) { AUTH = { email: u.email, token: token || (AUTH && AUTH.token), nome: u.nome, master: !!u.master, perm: u.perm || {}, aceite: u.aceite, trocar: !!u.trocar }; store.set('cot_auth', AUTH); }
+let UL = [], UE = null, REC = {}, AUDL = [];
+function rerender() { const y = window.scrollY; render(); window.scrollTo(0, y); }
+function showMsg(html) {
+  return new Promise(res => {
+    const w = document.createElement('div');
+    w.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99;display:flex;align-items:center;justify-content:center;padding:1rem';
+    w.innerHTML = '<div style="background:#fff;color:#111;border-radius:14px;padding:1.2rem;max-width:30rem;width:100%;max-height:90vh;overflow:auto"><div style="margin-bottom:1rem">' + html + '</div><button class="btn pri" data-ok="1">OK</button></div>';
+    w.addEventListener('click', e => { if (e.target.closest('[data-ok]')) { w.remove(); res(); } });
+    document.body.appendChild(w);
+  });
+}
+const hhmm = () => { const d = new Date(); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+async function api(acao, dados, auth) {
+  const a = auth || AUTH;
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 45000);
+  try {
+    const r = await fetch(SYNC_URL(), { method: 'POST', body: JSON.stringify(auth ? { auth, acao, dados: dados || {} } : { token: a && a.token, acao, dados: dados || {} }), signal: ctl.signal, redirect: 'follow' });
+    return await r.json();
+  } catch (e) { return { ok: false, erro: 'rede', msg: 'Sem conexão com o servidor. Verifique a internet.' }; }
+  finally { clearTimeout(tm); }
+}
+function updSync() { const el = $('#syncst'); if (el) el.textContent = (AUTH ? AUTH.nome + ' • ' : '') + SYNCST.msg; }
+function wipeLocal() { AUTH = null; store.set('cot_auth', null); const ui = DB.ui; DB = normDB({}); DB.ui = ui; saveDB(); clearDraft(); }
+function forceLogin() { wipeLocal(); toast('Sua sessão terminou. Entre novamente.'); goto('login'); }
+async function syncLoad() {
+  if (!syncOn() || !AUTH) return false;
+  SYNCST = { msg: 'Atualizando os dados…', ok: false }; updSync();
+  const r = await api('load');
+  if (!r.ok && r.erro === 'trocar') { AUTH.trocar = true; store.set('cot_auth', AUTH); goto('trocarsenha', { forced: true }); return false; }
+  if (!r.ok) {
+    if (r.erro === 'auth') { forceLogin(); return false; }
+    SYNCST = { msg: 'Sem conexão: usando os dados salvos neste aparelho.', ok: false }; updSync(); return false;
+  }
+  setAuth(r.usuario);
+  if (!r.clients.length && !r.catalog.length && !r.history.length) {
+    SYNCST = { msg: 'A planilha ainda está vazia' + (AUTH.master ? ': faça a carga inicial em Configurações.' : '. Avise o MASTER.'), ok: false };
+  } else {
+    DB.clients = r.clients; DB.catalog = r.catalog; DB.history = r.history; DB.counters = r.counters || {};
+    DB.settings = Object.assign({}, DEF.settings, r.settings || {});
+    saveDB(); SYNCST = { msg: 'Dados atualizados às ' + hhmm(), ok: true };
+  }
+  updSync();
+  if (['home', 'hist', 'config', 'lista'].includes(V.name)) render();
+  return true;
+}
+let cfgT;
+function syncSettings() { if (!syncOn() || !AUTH || !can('empresa')) return; clearTimeout(cfgT); cfgT = setTimeout(async () => { const r = await api('settings', { settings: DB.settings }); if (!r.ok) toast(r.msg || 'Não foi possível salvar as configurações na planilha.'); }, 1500); }
+const maskDoc = d => { const n = String(d || '').replace(/\D/g, ''); return n.length >= 4 ? '***' + n.slice(-2) : '***'; };
+const catKey = x => x.pn ? 'PN:' + up(x.pn) : 'NM:' + up(x.nome);
+
 /* ---------- cotação em andamento ---------- */
 const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), ptaxData: todayISO(), dias: +DB.settings.validade || 14,
-  cliente: '', att: '', aeronave: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
+  cliente: '', att: '', aeronave: '', serie: '', obs: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
   entrega: { tipo: '', dest: '', transp: '', envios: 1, fretePago: true, outro: '' }, _step: 'cliente' });
 let Q = store.get('cot_draft', null);
 const saveDraft = () => { if (Q) store.set('cot_draft', Q); };
@@ -208,6 +289,7 @@ async function buildPdf(q) {
   let last = y;
   if (up(q.att)) { y += 12; T('ATT. ' + up(q.att), L, y, { b: 1 }); last = y; }
   if (up(q.aeronave)) { y += 12; T(up(q.aeronave), 297.6, y, { b: 1, al: 'center' }); last = y; }
+  if (up(q.serie)) { y += 12; T('Nº SÉRIE: ' + up(q.serie), 297.6, y, { b: 1, al: 'center' }); last = y; }
   y = Math.max(198, last + 15);
   T('COTAÇÃO:' + numTxt(q), L, y, { b: 1 });
   y += 12; T('CONFORME SUA SOLICITAÇÃO ESTAMOS COTANDO MATERIAL ABAIXO:', L, y);
@@ -239,6 +321,7 @@ async function buildPdf(q) {
   y += 28;
   T('VALIDADE DA PROPOSTA:', L, y, { b: 1 }); T(br(addDays(q.data, q.dias)), 264, y, { b: 1 });
   y += 27; T('OBSERVAÇÃO:', L, y, { b: 1 }); T(isUsd(q) ? 'MATERIAL COTADO EM DÓLAR' : 'MATERIAL COTADO EM REAIS', 138, y, { b: 1 });
+  if (String(q.obs || '').trim()) { font(true); doc.setFontSize(9); const ol = doc.splitTextToSize(up(q.obs).replace(/\s*\n\s*/g, ' '), 395); ol.forEach(l => { y += LH + 1; if (y > 800) { doc.addPage(); y = 55; } T(l, 138, y, { b: 1 }); }); }
   y += 27; T('A VISTA VALOR LÍQUIDO', 138, y, { b: 1 });
   const { prazo, dep } = entregaTexts(q.entrega);
   y += 26;
@@ -266,7 +349,7 @@ async function buildPdf(q) {
 }
 
 /* ---------- estado de telas ---------- */
-const STEPS = ['cliente', 'contato', 'dados', 'aeronave', 'moeda', 'itens', 'preco', 'entrega', 'datas', 'conferir'];
+const STEPS = ['cliente', 'contato', 'dados', 'aeronave', 'moeda', 'itens', 'preco', 'entrega', 'datas', 'obs', 'conferir'];
 let V = { name: 'home' }, CUR = null, FC = false, E = null, PDF = null, LISTSEL = '';
 
 function goto(name, extra) { V = Object.assign({ name }, extra || {}); if (STEPS.includes(name) && Q) { Q._step = name; saveDraft(); } render(); }
@@ -274,6 +357,9 @@ function nextStep() { if (FC) { FC = false; return goto('conferir'); } goto(STEP
 function prevStep() { if (FC) { FC = false; return goto('conferir'); } const i = STEPS.indexOf(V.name); if (i <= 0) return goto('home'); goto(STEPS[i - 1]); }
 
 function render() {
+  if (syncOn() && !AUTH && !['login', 'esqueci'].includes(V.name)) V = { name: 'login' };
+  if (syncOn() && AUTH && AUTH.trocar && V.name !== 'trocarsenha') V = { name: 'trocarsenha', forced: true };
+  if (syncOn() && AUTH && !AUTH.trocar && AUTH.aceite === false && V.name !== 'aviso') V = { name: 'aviso', first: true };
   CUR = SCREENS[V.name]();
   $('#title').textContent = CUR.title;
   const idx = STEPS.indexOf(V.name);
@@ -299,7 +385,8 @@ function refreshNav() {
 function setField(f, val) {
   const [obj, key] = f.split('.');
   if (obj === 'E') E[key] = val;
-  else if (obj === 'cfg') { DB.settings[key] = val; saveDB(); }
+  else if (obj === 'cfg') { DB.settings[key] = val; saveDB(); syncSettings(); }
+  else if (obj === 'UE') { UE[key] = val; }
   else if (obj === 'ent') { Q.entrega[key] = val; saveDraft(); }
   else if (obj === 'cli') { Q.cli = Q.cli || {}; Q.cli[key] = key === 'uf' ? String(val).toUpperCase() : val; saveDraft(); }
   else { Q[obj] = val; if (obj === 'cliente') { const c = findClient(val); Q.att = c ? (c.att || '') : ''; Q.cli = cliOf(c); } saveDraft(); }
@@ -350,12 +437,94 @@ const SCREENS = {
     const needCfg = !up(DB.settings.banco) && !String(DB.settings.fone1 || '').trim();
     return { title: 'COTAÇÕES - ATAIDE COM. ADESIVOS', html: `
       <h2>O que você quer fazer?</h2>
+      ${syncOn() && AUTH ? `<p class="muted" id="syncst">${esc(AUTH.nome)} • ${esc(SYNCST.msg)}</p>` : ''}
       ${needCfg ? '<div class="note"><b>Primeiro uso:</b> peça para quem configurou o aplicativo carregar os dados da empresa em <b>Configurações</b>.</div>' : ''}
-      ${draft ? `<button class="btn pri" data-a="resume">Continuar a cotação em andamento<small>${esc(Q.cliente || 'sem cliente ainda')}</small></button>` : ''}
-      <button class="btn ${draft ? '' : 'pri'}" data-a="new">Nova cotação</button>
-      <button class="btn" data-a="hist">Cotações anteriores (${DB.history.length})</button>
+      ${syncOn() && AUTH && !can('cotar') ? '<div class="note">Você não tem permissão para criar cotações. Peça ao MASTER.</div>' : ''}
+      ${draft && can('cotar') ? `<button class="btn pri" data-a="resume">Continuar a cotação em andamento<small>${esc(Q.cliente || 'sem cliente ainda')}</small></button>` : ''}
+      ${can('cotar') ? `<button class="btn ${draft ? '' : 'pri'}" data-a="new">Nova cotação</button>` : ''}
+      ${can('historico') || can('corrigir') ? `<button class="btn" data-a="hist">Cotações anteriores (${DB.history.length})</button>` : ''}
       <button class="btn" data-a="config">Configurações</button>
       ${draft ? '<button class="btn danger" data-a="discard">Descartar a cotação em andamento</button>' : ''}` };
+  },
+  login() {
+    return { title: 'COTAÇÕES - ATAIDE COM. ADESIVOS', html: `
+      <h2>Entrar</h2>
+      <label for="l_em">E-mail</label><input id="l_em" type="email" autocomplete="username" autocapitalize="none" inputmode="email">
+      <label for="l_se">Senha</label><input id="l_se" type="password" autocomplete="current-password">
+      <p class="muted" id="lmsg"></p>
+      <button class="btn pri" data-a="dologin">Entrar</button>
+      <button class="btn" data-a="esqueci">Esqueci minha senha</button>
+      <p class="muted">O acesso é criado pelo MASTER (responsável pelo sistema).</p>` };
+  },
+  aviso() {
+    const first = V.first;
+    return { title: 'Privacidade (LGPD)', back: first ? null : () => goto('config'), backLabel: 'Voltar', html: `
+      <h2>Aviso de privacidade</h2>
+      <div class="note">Este sistema guarda dados pessoais de clientes. Use-os somente para fazer cotações e atender o cliente.</div>
+      <p><b>Que dados:</b> nome do cliente e do contato, aeronave, endereço, telefone, e-mail e CPF/CNPJ (opcionais) e as cotações emitidas.</p>
+      <p><b>Para quê:</b> preparar e enviar propostas comerciais, acompanhar vendas e cumprir obrigações legais.</p>
+      <p><b>Quem acessa:</b> apenas pessoas autorizadas com e-mail e senha pessoais. Usuários comuns não veem o CPF/CNPJ completo. Os acessos são registrados.</p>
+      <p><b>Onde ficam:</b> na planilha Google da empresa, e uma cópia temporária neste aparelho, apagada quando você toca em <b>Sair</b>.</p>
+      <p><b>Seus deveres:</b> não compartilhe sua senha, não tire foto/print de cadastros, não envie dados de clientes por aplicativos pessoais, use <b>Sair</b> em aparelhos compartilhados e avise o administrador se perder o aparelho ou suspeitar de acesso indevido.</p>
+      <p><b>Direitos do titular:</b> o cliente pode pedir acesso, correção ou exclusão de seus dados ao administrador da empresa.</p>
+      ${first ? '<button class="btn pri" data-a="aceite">Li e estou ciente</button>' : '<button class="btn" data-a="config">Voltar</button>'}` };
+  },
+  esqueci() {
+    return { title: 'Recuperar senha', back: () => goto('login'), backLabel: 'Voltar', html: `
+      <h2>Esqueci minha senha</h2>
+      <p class="muted">Enviamos um código de 6 números para o seu e-mail. Ele vale 15 minutos.</p>
+      <label for="r_em">Seu e-mail</label><input id="r_em" type="email" autocapitalize="none" inputmode="email" value="${esc(REC.email || '')}">
+      <button class="btn pri" data-a="esqpedir">${REC.enviado ? 'Enviar outro código' : 'Enviar código por e-mail'}</button>
+      <p class="muted" id="rmsg">${esc(REC.msg || '')}</p>
+      ${REC.enviado ? `<label for="r_cod">Código recebido (6 números)</label><input id="r_cod" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        <label for="r_n1">Nova senha</label><input id="r_n1" type="password" autocomplete="new-password">
+        <label for="r_n2">Repita a nova senha</label><input id="r_n2" type="password" autocomplete="new-password">
+        <p class="muted">Mínimo 8 caracteres, com letras e números.</p>
+        <button class="btn pri" data-a="esqconf">Salvar nova senha</button>` : ''}` };
+  },
+  trocarsenha() {
+    const f = V.forced;
+    return { title: 'Trocar senha', back: f ? null : () => goto('config'), backLabel: 'Voltar', html: `
+      <h2>${f ? 'Crie a sua senha' : 'Trocar minha senha'}</h2>
+      ${f ? '<div class="note">Você entrou com uma senha provisória. Crie agora a sua senha pessoal.</div>' : ''}
+      <label for="t_at">${f ? 'Senha provisória (a que você recebeu)' : 'Senha atual'}</label><input id="t_at" type="password" autocomplete="current-password">
+      <label for="t_n1">Nova senha</label><input id="t_n1" type="password" autocomplete="new-password">
+      <label for="t_n2">Repita a nova senha</label><input id="t_n2" type="password" autocomplete="new-password">
+      <p class="muted">Mínimo 8 caracteres, com letras e números.</p>
+      <p class="muted" id="tmsg"></p>
+      <button class="btn pri" data-a="tsenha">Salvar nova senha</button>
+      ${f ? '<button class="btn" data-a="logout">Sair</button>' : ''}` };
+  },
+  usuarios() {
+    const rows = UL.map((u, i) => `<button class="btn" data-a="editusuario" data-i="${i}">${esc(u.nome || u.email)}${u.master ? ' (MASTER)' : ''}<small>${esc(u.email)} • ${u.master ? 'todas as permissões' : (u.ativo ? PERM_INFO.filter(x => u.perm[x[0]]).length + ' de ' + PERM_INFO.length + ' permissões' : 'INATIVO')}${u.trocar ? ' • vai criar a senha no 1º acesso' : ''}${u.ultimo ? ' • último acesso ' + esc(dtBr(u.ultimo)) : ''}</small></button>`).join('');
+    return { title: 'Usuários e permissões', back: () => goto('config'), backLabel: 'Voltar', html: `
+      <h2>Usuários e permissões</h2>
+      <div class="note">Só o <b>MASTER</b> vê esta tela. Cada pessoa só pode o que você marcar. Você pode mudar a qualquer momento.</div>
+      <button class="btn pri" data-a="novousuario">+ Novo usuário</button>${rows}` };
+  },
+  usuario() {
+    const u = UE, isNew = !!u.novo, m = !!u.master;
+    const tog = x => `<button class="btn ${u.perm[x[0]] ? 'sel' : ''}" data-a="permtoggle" data-k="${x[0]}" ${m ? 'disabled' : ''}>${u.perm[x[0]] ? '✔ ' : '☐ '}${esc(x[1])}<small>${esc(x[2])}</small></button>`;
+    return { title: isNew ? 'Novo usuário' : 'Usuário', back: () => goto('usuarios'), backLabel: 'Voltar', html: `
+      <h2>${isNew ? 'Novo usuário' : esc(u.nome || u.email)}${m ? ' (MASTER)' : ''}</h2>
+      <label for="u_nome">Nome</label><input id="u_nome" data-f="UE.nome" value="${esc(u.nome)}" autocomplete="off">
+      <label for="u_em">E-mail (é o login)</label><input id="u_em" type="email" data-f="UE.email" value="${esc(u.email)}" ${isNew ? '' : 'readonly'} autocapitalize="none" autocomplete="off">
+      ${isNew ? `<label for="u_se">Senha provisória (passe para a pessoa; no 1º acesso ela cria a própria senha)</label><input id="u_se" data-f="UE.senha" value="${esc(u.senha)}" autocomplete="off" autocapitalize="none"><button class="btn sm" data-a="gerarsenha">Gerar outra senha</button>` : ''}
+      ${m ? '<div class="note">O MASTER tem todas as permissões e não pode ser desativado nem apagado.</div>' : `
+      <h3>O que esta pessoa pode fazer</h3>
+      <p class="muted">Modelos prontos:</p>
+      <div class="chips"><button class="chip" data-a="preset" data-k="consulta">Consulta</button><button class="chip" data-a="preset" data-k="vendedor">Vendedor</button><button class="chip" data-a="preset" data-k="gerente">Gerente</button><button class="chip" data-a="preset" data-k="nenhuma">Nenhuma</button></div>
+      ${PERM_INFO.map(tog).join('')}
+      <h3>Situação</h3>
+      <div class="row"><button class="btn ${u.ativo ? 'sel' : ''}" data-a="ativo" data-v="1">Ativo</button><button class="btn ${u.ativo ? '' : 'sel'}" data-a="ativo" data-v="0">Inativo (bloqueado)</button></div>`}
+      <button class="btn pri" data-a="usalvar">Salvar</button>
+      ${isNew ? '' : '<button class="btn" data-a="ureset">Redefinir senha (gera uma provisória)</button>'}
+      ${isNew || m ? '' : '<button class="btn danger" data-a="uapagar">Apagar este usuário</button>'}` };
+  },
+  auditoria() {
+    return { title: 'Registro de acessos', back: () => goto('config'), backLabel: 'Voltar', html: `
+      <h2>Registro de acessos</h2><p class="muted">Últimos eventos (do mais novo para o mais antigo). Senhas nunca são registradas.</p>
+      ${AUDL.length ? AUDL.map(a => `<div class="card"><b>${esc(a.a)}</b><div class="muted">${esc(dtBr(a.t))} • ${esc(a.u)}${a.d ? ' • ' + esc(a.d) : ''}</div></div>`).join('') : '<p class="muted">Nada registrado.</p>'}` };
   },
   cliente() {
     return { title: 'Nova cotação', back: () => goto('home'), next: () => nextStep(), nextLabel: 'Continuar',
@@ -384,7 +553,7 @@ const SCREENS = {
         <div class="note">${novo ? '<b>Cliente novo:</b> ele será cadastrado ao gerar a cotação.' : 'Cliente já cadastrado.'} Estes dados ficam <b>somente no cadastro</b> e <b>não aparecem no PDF</b>. Preencha só o que souber.</div>
         ${f('end', 'Rua, número, bairro')}
         ${f('cep', '00000-000', 'numeric')}<button class="btn sm" data-a="cep">Buscar endereço pelo CEP (precisa de internet)</button>
-        ${f('cidade')}${f('uf', 'PR')}${f('pais', 'BRASIL')}${f('fone', '(43) 99999-9999', 'tel')}${f('doc', 'CPF ou CNPJ', 'numeric')}${f('email', 'nome@email.com', 'email')}
+        ${f('cidade')}${f('uf', 'PR')}${f('pais', 'BRASIL')}${f('fone', '(43) 99999-9999', 'tel')}${f('doc', 'CPF ou CNPJ', 'numeric')}${(findClient(Q.cliente) || {}).docOculto && !(Q.cli || {}).doc ? '<p class="muted">CPF/CNPJ já cadastrado (oculto). Preencha só se quiser trocar.</p>' : ''}${f('email', 'nome@email.com', 'email')}
         <button class="btn" data-a="skipdados">Não informar agora</button>` };
   },
   moeda() {
@@ -412,7 +581,16 @@ const SCREENS = {
         <label for="f_ae">Matrícula da aeronave</label>
         <input id="f_ae" data-f="aeronave" value="${esc(Q.aeronave)}" placeholder="PT-ABC" autocomplete="off" autocapitalize="characters">
         ${past.length ? `<p class="muted">Usadas antes por este cliente:</p><div class="chips">${past.map(a => `<button class="chip" data-a="useae" data-v="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}
-        <button class="btn" data-a="skipae">Não informar aeronave</button>` };
+        <button class="btn" data-a="skipae">Não informar aeronave</button>
+        <label for="f_se">Nº de série do produto (opcional)</label>
+        <input id="f_se" data-f="serie" value="${esc(Q.serie || '')}" placeholder="Deixe em branco se não houver" autocomplete="off" autocapitalize="characters">` };
+  },
+  obs() {
+    return { title: 'Nova cotação', back: prevStep, next: nextStep, valid: () => '',
+      html: `<h2>Quer escrever alguma observação?</h2><p class="muted">Opcional. O texto sai no PDF, na linha de OBSERVAÇÃO.</p>
+        <label for="f_obs">Observação da cotação</label>
+        <textarea id="f_obs" data-f="obs" rows="4" maxlength="400" placeholder="Deixe em branco se não houver">${esc(Q.obs || '')}</textarea>
+        <button class="btn" data-a="skipobs">Sem observação</button>` };
   },
   itens() {
     const cards = Q.itens.map((it, i) => `<div class="card"><b>${qtdStr(it.qtd)} × ${esc(it.nome)}</b>
@@ -509,13 +687,14 @@ const SCREENS = {
     return { title: 'Conferir', back: () => goto('datas'), next: gerar, nextLabel: 'Gerar PDF',
       valid: () => '',
       html: `<h2>Está tudo certo?</h2><p class="muted">Confira antes de gerar o PDF. Cotação nº <b>${esc(nextNum)}</b></p>
-        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${cNovo ? tag('cliente novo, será cadastrado') : ''}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}${hasCli ? `<div class="muted">Dados do cadastro (não vão no PDF): ${CLI_KEYS.filter(k => Q.cli[k]).map(k => esc(CLI_LBL[k])).join(', ')}</div>` : ''}</div>
+        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${cNovo ? tag('cliente novo, será cadastrado') : ''}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}${up(Q.serie) ? `<br>Nº série: ${esc(up(Q.serie))}` : ''}${hasCli ? `<div class="muted">Dados do cadastro (não vão no PDF): ${CLI_KEYS.filter(k => Q.cli[k]).map(k => esc(CLI_LBL[k])).join(', ')}</div>` : ''}</div>
         <div class="sec"><div class="h"><b>Moeda</b>${alt('moeda')}</div>${isUsd(Q) ? 'Dólar (US$) — depósito em reais' : 'Reais (R$)'}</div>
         <div class="sec"><div class="h"><b>Itens</b>${alt('itens')}</div>
           ${Q.itens.map(it => `<div style="margin:.4rem 0">${qtdStr(it.qtd)} × ${esc(up(it.nome))}${itNovo(it) ? tag('item novo') : ''}<div class="muted">P/N ${esc(up(it.pn) || '-')} • ${money(Q, it.unit)} cada = <b>${money(Q, lineCents(it))}</b></div></div>`).join('')}
           <div class="tot right">Total: ${money(Q, totalCents(tmp))}</div></div>
         ${E2 != null ? `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div><span class="tot">${money(Q, E2)}</span></div>` : `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div>Não</div>`}
         <div class="sec"><div class="h"><b>Entrega</b>${alt('entrega')}</div>${esc(prazo)}<div class="muted">${esc(dep)}</div></div>
+        <div class="sec"><div class="h"><b>Observação</b>${alt('obs')}</div>${String(Q.obs || '').trim() ? esc(Q.obs) : 'Nenhuma'}</div>
         <div class="sec"><div class="h"><b>Datas</b>${alt('datas')}</div>Cotação: ${br(Q.data)}<br>Válida até: ${br(addDays(Q.data, Q.dias))}</div>
         <div class="ok"><span class="muted">Valor a depositar</span><div class="tot" style="font-size:1.5rem">${isUsd(Q) ? (isNaN(rateOf(Q)) ? '-' : brl(toBrl(Q, finalCents(tmp)))) : brl(finalCents(tmp))}</div>${isUsd(Q) ? `<div class="muted">Cotação em ${money(Q, finalCents(tmp))}</div>` : ''}</div>` };
   },
@@ -545,9 +724,9 @@ const SCREENS = {
       <p class="muted">${br(h.data)} • ${money(h, finalCents(h))}</p>
       ${h.itens.map(it => `<div class="card">${qtdStr(it.qtd)} × ${esc(up(it.nome))}<div class="muted">P/N ${esc(up(it.pn) || '-')} • ${money(h, it.unit)}</div></div>`).join('')}
       <button class="btn pri" data-a="regen" data-id="${esc(h.id)}">Gerar o PDF / enviar no WhatsApp</button>
-      <button class="btn" data-a="clone" data-id="${esc(h.id)}">Usar como base para uma nova cotação</button>
-      <button class="btn" data-a="fixhist" data-id="${esc(h.id)}">Corrigir esta cotação</button>
-      <button class="btn danger" data-a="delhist" data-id="${esc(h.id)}">Apagar esta cotação</button>` };
+      ${can('cotar') ? `<button class="btn" data-a="clone" data-id="${esc(h.id)}">Usar como base para uma nova cotação</button>` : ''}
+      ${can('corrigir') ? `<button class="btn" data-a="fixhist" data-id="${esc(h.id)}">Corrigir esta cotação</button>` : ''}
+      ${can('apagar') ? `<button class="btn danger" data-a="delhist" data-id="${esc(h.id)}">Apagar esta cotação</button>` : ''}` };
   },
   config() {
     const S = DB.settings;
@@ -555,28 +734,32 @@ const SCREENS = {
     const yr = String(new Date().getFullYear());
     return { title: 'Configurações', back: () => goto('home'), backLabel: 'Concluído',
       html: `<h2>Configurações</h2>
-        <div class="note">Estes dados aparecem no PDF. Normalmente são preenchidos uma única vez, por quem instala o aplicativo.</div>
+        ${syncOn() && AUTH ? `<p class="muted">Usuário: <b>${esc(AUTH.nome)}</b>${AUTH.master ? ' (MASTER)' : ''}</p>
+        ${AUTH.master ? '<button class="btn pri" data-a="usuarios">Usuários e permissões</button><button class="btn" data-a="auditoria">Registro de acessos</button>' : ''}
+        <button class="btn" data-a="syncnow">Atualizar os dados agora</button><button class="btn" data-a="trocarsenha">Trocar minha senha</button><button class="btn" data-a="logout">Sair deste aparelho</button>` : ''}
         <h3>Tamanho da letra</h3><button class="btn" data-a="fs">Mudar o tamanho da letra</button>
+        ${can('empresa') ? `<div class="note">Estes dados aparecem no PDF. Normalmente são preenchidos uma única vez, por quem instala o aplicativo.</div>
         <h3>Telefones (WhatsApp)</h3>${f('fone1', 'Telefone 1', '(43) 99999-9999')}${f('fone2', 'Telefone 2 (opcional)')}
         <h3>Dados para depósito</h3>${f('banco', 'Banco', 'Exemplo: BRADESCO')}${f('agencia', 'Agência')}${f('conta', 'Conta corrente')}${f('doc', 'CPF ou CNPJ do titular')}${f('titular', 'Nome do titular')}
         <h3>Assinatura no final do PDF</h3>${f('assinatura', 'Texto da assinatura', 'Exemplo: PATRÍCIA - LONDRINA')}
         <h3>Numeração e validade</h3>
         <label for="c_num">Última cotação feita em ${yr} (a próxima será +1)</label><input id="c_num" inputmode="numeric" value="${DB.counters[yr] || 0}" data-a-change="counter">
-        <label for="c_val">Validade padrão (dias)</label><input id="c_val" inputmode="numeric" data-f="cfg.validade" value="${esc(S.validade)}">
+        <label for="c_val">Validade padrão (dias)</label><input id="c_val" inputmode="numeric" data-f="cfg.validade" value="${esc(S.validade)}">` : ''}
         <h3>Dados do aplicativo</h3>
-        <button class="btn" data-a="lista" data-k="clients">Clientes salvos (${DB.clients.length})</button>
-        <button class="btn" data-a="lista" data-k="catalog">Itens salvos (${DB.catalog.length})</button>
-        <button class="btn" data-a="exp" data-k="clients">Exportar clientes (planilha)</button>
+        ${can('cadastros') ? `<button class="btn" data-a="lista" data-k="clients">Clientes salvos (${DB.clients.length})</button>
+        <button class="btn" data-a="lista" data-k="catalog">Itens salvos (${DB.catalog.length})</button>` : ''}
+        ${can('exportar') ? `<button class="btn" data-a="exp" data-k="clients">Exportar clientes (planilha)</button>
         <button class="btn" data-a="exp" data-k="catalog">Exportar itens (planilha)</button>
-        <button class="btn" data-a="backup">Fazer backup (salvar arquivo)</button>
-        <button class="btn" data-a="restore">Carregar arquivo de dados / backup</button>
-        <p class="muted">O backup guarda tudo (clientes, itens, cotações e configurações). Guarde o arquivo em local seguro, como o Google Drive.</p>` };
+        <button class="btn" data-a="backup">Fazer backup (salvar arquivo)</button>` : ''}
+        ${syncOn() ? '<button class="btn" data-a="privacidade">Aviso de privacidade (LGPD)</button>' : ''}
+        ${isMaster() ? `<button class="btn" data-a="restore">${syncOn() ? 'Carga inicial: enviar um arquivo de dados para a planilha' : 'Carregar arquivo de dados / backup'}</button>` : ''}
+        <p class="muted">${syncOn() ? 'Os dados ficam guardados na planilha da empresa e todos os aparelhos veem as mesmas informações.' : 'O backup guarda tudo (clientes, itens, cotações e configurações). Guarde o arquivo em local seguro, como o Google Drive.'}</p>` };
   },
   lista() {
     const k = V.k, arr = DB[k];
     const rows = arr.map((x, i) => k === 'clients'
-      ? `<div class="card"><b>${esc(x.nome)}</b>${x.att ? `<div class="muted">A/C: ${esc(x.att)}</div>` : ''}${CLI_KEYS.filter(k => x[k]).map(k => `<div class="muted">${esc(CLI_LBL[k])}: ${esc(x[k])}</div>`).join('')}<button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`
-      : `<div class="card"><b>${esc(x.nome)}</b><div class="muted">P/N ${esc(x.pn || '-')} • ${x.unit ? 'R$ ' + fmt(x.unit) : ''}${x.unit && x.unitUsd ? ' • ' : ''}${x.unitUsd ? 'US$ ' + fmt(x.unitUsd) : ''}</div><button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`).join('');
+      ? `<div class="card"><b>${esc(x.nome)}</b>${x.att ? `<div class="muted">A/C: ${esc(x.att)}</div>` : ''}${CLI_KEYS.filter(k => x[k]).map(k => `<div class="muted">${esc(CLI_LBL[k])}: ${esc(k === 'doc' ? maskDoc(x[k]) : x[k])}</div>`).join('')}${x.docOculto ? `<div class="muted">CPF/CNPJ: cadastrado (oculto)</div>` : ''}${syncOn() && can('lgpd') ? `<button class="btn sm" data-a="lgpdexp" data-i="${i}">Exportar dados do titular</button><button class="btn sm danger" data-a="lgpdapagar" data-i="${i}">Apagar dados pessoais (LGPD)</button>` : ''}${can('apagar') ? `<button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button>` : ''}</div>`
+      : `<div class="card"><b>${esc(x.nome)}</b><div class="muted">P/N ${esc(x.pn || '-')} • ${x.unit ? 'R$ ' + fmt(x.unit) : ''}${x.unit && x.unitUsd ? ' • ' : ''}${x.unitUsd ? 'US$ ' + fmt(x.unitUsd) : ''}</div>${can('apagar') ? `<button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button>` : ''}</div>`).join('');
     return { title: k === 'clients' ? 'Clientes salvos' : 'Itens salvos', back: () => goto('config'), html: `<h2>${k === 'clients' ? 'Clientes salvos' : 'Itens salvos'}</h2>${rows || '<p class="muted">Nada salvo ainda.</p>'}` };
   }
 };
@@ -600,35 +783,47 @@ async function gerar() {
   delete q.espOn; delete q.espTxt; delete q._step; delete q.cli; delete q.ptaxTxt; delete q.ptaxInfo;
   const isFix = !!q.numero;
   const yr = q.data.slice(0, 4);
-  if (!isFix) { q.numero = (DB.counters[yr] || 0) + 1; q.ano = +yr; }
-  q.criadaEm = q.criadaEm || Date.now();
-  $('#nav').innerHTML = '<div class="btn" style="text-align:center">Gerando o PDF…</div>';
-  let blob;
-  try { blob = await buildPdf(q); }
-  catch (e) { console.error(e); toast('Não foi possível gerar o PDF. Tente de novo.'); refreshNav(); return; }
-  if (!isFix) DB.counters[yr] = q.numero;
-  const i = DB.history.findIndex(h => h.id === q.id);
-  if (i >= 0) DB.history[i] = q; else DB.history.push(q);
   const now = Date.now();
-  let c = findClient(q.cliente);
-  if (!c) { c = { nome: up(q.cliente) }; DB.clients.push(c); }
-  c.att = up(q.att); c.last = now;
+  // cadastro do cliente (pergunta SIM/NÃO se algum dado já existente mudou)
+  const old = findClient(q.cliente);
+  const crec = Object.assign({}, old || { nome: up(q.cliente) }); delete crec.docOculto;
+  if (up(q.att)) crec.att = up(q.att);
+  crec.last = now;
   const diffs = [];
   CLI_KEYS.forEach(k => {
-    const nv = String(cli[k] || '').trim(), ov = String(c[k] || '').trim();
+    const nv = String(cli[k] || '').trim(), ov = String(crec[k] || '').trim();
     if (!nv || nv === ov) return;
-    if (!ov) c[k] = nv; else diffs.push([k, ov, nv]);
+    if (!ov) crec[k] = nv; else diffs.push([k, ov, nv]);
   });
   if (diffs.length) {
-    const ok = await askYN('Os dados de <b>' + esc(c.nome) + '</b> mudaram:<br><br>' + diffs.map(d => esc(CLI_LBL[d[0]]) + ': <s>' + esc(d[1]) + '</s> → <b>' + esc(d[2]) + '</b>').join('<br>') + '<br><br><b>Atualizar o cadastro?</b>');
-    if (ok) diffs.forEach(d => { c[d[0]] = d[2]; });
+    const ok = await askYN('Os dados de <b>' + esc(crec.nome) + '</b> mudaram:<br><br>' + diffs.map(d => esc(CLI_LBL[d[0]]) + ': <s>' + esc(d[0] === 'doc' ? maskDoc(d[1]) : d[1]) + '</s> → <b>' + esc(d[0] === 'doc' ? maskDoc(d[2]) : d[2]) + '</b>').join('<br>') + '<br><br><b>Atualizar o cadastro?</b>');
+    if (ok) diffs.forEach(d => { crec[d[0]] = d[2]; });
   }
-  q.itens.forEach(it => {
-    const k = DB.catalog.find(x => (it.pn && up(x.pn) === it.pn) || (!it.pn && !x.pn && up(x.nome) === it.nome));
-    const f = q.moeda === 'USD' ? 'unitUsd' : 'unit';
-    if (k) { k.nome = it.nome; k[f] = it.unit; } else { const n = { pn: it.pn, nome: it.nome }; n[f] = it.unit; DB.catalog.push(n); }
+  const f = q.moeda === 'USD' ? 'unitUsd' : 'unit';
+  const patches = q.itens.map(it => { const o = { pn: it.pn, nome: it.nome }; o[f] = it.unit; return o; });
+  $('#nav').innerHTML = '<div class="btn" style="text-align:center">' + (syncOn() ? 'Salvando na planilha e gerando o PDF…' : 'Gerando o PDF…') + '</div>';
+  if (syncOn()) {
+    const r = await api('emit', { quote: q, novoNumero: !isFix, client: crec, items: patches });
+    if (!r.ok) {
+      if (r.erro === 'auth') { forceLogin(); return; }
+      toast((r.msg || 'Não foi possível salvar.') + ' A cotação NÃO foi gerada. Tente de novo.'); refreshNav(); return;
+    }
+    q.numero = r.numero; q.ano = r.ano;
+  } else if (!isFix) { q.numero = (DB.counters[yr] || 0) + 1; q.ano = +yr; }
+  q.criadaEm = q.criadaEm || now;
+  // guarda no aparelho
+  DB.counters[String(q.ano)] = Math.max(DB.counters[String(q.ano)] || 0, q.numero);
+  const hi = DB.history.findIndex(h => h.id === q.id);
+  if (hi >= 0) DB.history[hi] = q; else DB.history.push(q);
+  if (old) Object.assign(old, crec); else DB.clients.push(crec);
+  patches.forEach(pt => {
+    const k = DB.catalog.find(x => (pt.pn && up(x.pn) === pt.pn) || (!pt.pn && !x.pn && up(x.nome) === pt.nome));
+    if (k) Object.assign(k, pt); else DB.catalog.push(pt);
   });
   saveDB(); clearDraft();
+  let blob;
+  try { blob = await buildPdf(q); }
+  catch (e) { console.error(e); toast('A cotação ' + numTxt(q) + ' foi salva, mas o PDF falhou. Abra-a em Cotações anteriores e gere o PDF.'); goto('hist'); return; }
   setPdf(q, blob); goto('pronto');
 }
 function setPdf(q, blob) {
@@ -704,7 +899,7 @@ async function ptaxFetch() {
 function ptaxEx() { const el = $('#ptaxex'); if (el) { const r = rateOf(Q); el.textContent = isNaN(r) ? '-' : brl(Math.round(100000 * r)); } }
 function ptaxStep(d) { const r = rateOf(Q); const b = isNaN(r) ? 0 : r; Q.ptaxTxt = (Math.max(0.01, Math.round((b + d) * 10000) / 10000)).toFixed(4).replace('.', ','); saveDraft(); const i = $('#f_ptax'); if (i) i.value = Q.ptaxTxt; ptaxEx(); refreshNav(); }
 function csvOf(k) {
-  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const q = v => { let t = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; };
   const n = c => c ? (c / 100).toFixed(2).replace('.', ',') : '';
   let rows;
   if (k === 'clients') rows = [['Nome', 'A/C', 'Rua e número', 'CEP', 'Cidade', 'UF', 'País', 'Telefone', 'CPF/CNPJ', 'E-mail']].concat(DB.clients.map(c => [c.nome, c.att, c.end, c.cep, c.cidade, c.uf, c.pais, c.fone, c.doc, c.email]));
@@ -712,6 +907,105 @@ function csvOf(k) {
   return '\ufeff' + rows.map(r => r.map(q).join(';')).join('\r\n');
 }
 const ACT = {
+  async dologin() {
+    const em = ($('#l_em').value || '').trim(), se = $('#l_se').value || '';
+    const msg = $('#lmsg');
+    if (!em || !se) { msg.textContent = 'Digite o e-mail e a senha.'; return; }
+    msg.textContent = 'Entrando…';
+    const r = await api('login', {}, { email: em, senha: se });
+    if (!r.ok) { msg.textContent = r.msg || 'Não foi possível entrar.'; return; }
+    setAuth(r.usuario, r.token);
+    $('#l_se').value = ''; goto('home'); if (!AUTH.trocar) syncLoad();
+  },
+  async aceite() { const r = await api('aviso'); if (!r.ok) { toast(r.msg || 'Não foi possível registrar. Tente de novo.'); return; } AUTH.aceite = true; store.set('cot_auth', AUTH); goto('home'); syncLoad(); },
+  async logout() {
+    if (!confirm('Sair deste aparelho? Os dados salvos aqui serão apagados deste aparelho (continuam na planilha).')) return;
+    try { await api('logout'); } catch (e) {}
+    wipeLocal(); goto('login');
+  },
+  privacidade() { goto('aviso'); },
+  esqueci() { REC = {}; goto('esqueci'); },
+  async esqpedir() {
+    const em = ($('#r_em').value || '').trim(); if (!em) { $('#rmsg').textContent = 'Digite o seu e-mail.'; return; }
+    $('#rmsg').textContent = 'Enviando…';
+    const r = await api('rec_pedir', { email: em });
+    REC = { email: em, enviado: !!r.ok, msg: r.msg || (r.ok ? '' : 'Não foi possível enviar agora.') }; rerender();
+  },
+  async esqconf() {
+    const cod = ($('#r_cod').value || '').trim(), n1 = $('#r_n1').value, n2 = $('#r_n2').value;
+    if (!/^\d{6}$/.test(cod)) { $('#rmsg').textContent = 'Digite o código de 6 números.'; return; }
+    if (n1 !== n2) { $('#rmsg').textContent = 'As duas senhas não são iguais.'; return; }
+    if (!strongPw(n1)) { $('#rmsg').textContent = 'A senha precisa ter 8 ou mais caracteres, com letras e números.'; return; }
+    $('#rmsg').textContent = 'Salvando…';
+    const r = await api('rec_confirmar', { email: REC.email, codigo: cod, nova: n1 });
+    if (!r.ok) { $('#rmsg').textContent = r.msg || 'Não foi possível salvar.'; return; }
+    REC = {}; goto('login'); toast('Senha alterada. Entre com a nova senha.');
+  },
+  trocarsenha() { goto('trocarsenha'); },
+  async tsenha() {
+    const at = $('#t_at').value, n1 = $('#t_n1').value, n2 = $('#t_n2').value, msg = $('#tmsg');
+    if (!at) { msg.textContent = 'Digite a senha ' + (V.forced ? 'provisória.' : 'atual.'); return; }
+    if (n1 !== n2) { msg.textContent = 'As duas senhas novas não são iguais.'; return; }
+    if (!strongPw(n1)) { msg.textContent = 'A nova senha precisa ter 8 ou mais caracteres, com letras e números.'; return; }
+    msg.textContent = 'Salvando…';
+    const r = await api('senha_trocar', { atual: at, nova: n1 });
+    if (!r.ok) { msg.textContent = r.msg || 'Não foi possível trocar.'; return; }
+    AUTH.token = r.token; AUTH.trocar = false; store.set('cot_auth', AUTH);
+    toast('Senha alterada.'); goto('home'); syncLoad();
+  },
+  async usuarios() {
+    const r = await api('users_list'); if (!r.ok) { toast(r.msg || 'Não foi possível abrir.'); return; }
+    UL = r.users; goto('usuarios');
+  },
+  novousuario() { UE = { novo: true, nome: '', email: '', senha: gerarSenha(), ativo: true, perm: Object.assign({}, PRESETS.vendedor) }; goto('usuario'); },
+  editusuario(d) { UE = JSON.parse(JSON.stringify(UL[+d.i])); goto('usuario'); },
+  permtoggle(d) { UE.perm[d.k] = !UE.perm[d.k]; rerender(); },
+  preset(d) { UE.perm = {}; PERM_INFO.forEach(x => { UE.perm[x[0]] = !!PRESETS[d.k][x[0]]; }); rerender(); },
+  ativo(d) { UE.ativo = d.v === '1'; rerender(); },
+  gerarsenha() { UE.senha = gerarSenha(); rerender(); },
+  async usalvar() {
+    const nome = ($('#u_nome').value || '').trim(), em = ($('#u_em').value || '').trim().toLowerCase();
+    if (!nome || !em.includes('@')) { toast('Preencha o nome e um e-mail válido.'); return; }
+    if (UE.novo && !strongPw(UE.senha)) { toast('A senha provisória precisa ter 8+ caracteres com letras e números.'); return; }
+    const perm = {}; PERM_INFO.forEach(x => { perm[x[0]] = !!UE.perm[x[0]]; });
+    const r = await api('user_save', { email: em, nome, senha: UE.novo ? UE.senha : undefined, ativo: UE.ativo !== false, perm });
+    if (!r.ok) { toast(r.msg || 'Não foi possível salvar.'); return; }
+    if (UE.novo) await showMsg('Usuário criado.<br><br><b>E-mail:</b> ' + esc(em) + '<br><b>Senha provisória:</b> ' + esc(UE.senha) + '<br><br>Passe estes dados à pessoa. No primeiro acesso ela vai criar a própria senha. Anote agora: esta senha não será mostrada de novo.');
+    const l = await api('users_list'); if (l.ok) UL = l.users;
+    goto('usuarios'); toast('Salvo.');
+  },
+  async ureset() {
+    if (!confirm('Gerar uma nova senha provisória para ' + UE.email + '? A senha atual deixa de valer e a pessoa é desconectada.')) return;
+    const r = await api('user_reset', { email: UE.email }); if (!r.ok) { toast(r.msg || 'Não foi possível.'); return; }
+    await showMsg('Nova senha provisória de <b>' + esc(UE.email) + '</b>:<br><br><b>' + esc(r.senha) + '</b><br><br>Passe à pessoa. No próximo acesso ela cria uma senha própria. Anote agora: não será mostrada de novo.');
+  },
+  async uapagar() {
+    if (!confirm('Apagar o usuário ' + UE.email + '? Ele perde o acesso imediatamente.')) return;
+    const r = await api('user_delete', { email: UE.email }); if (!r.ok) { toast(r.msg || 'Não foi possível.'); return; }
+    const l = await api('users_list'); if (l.ok) UL = l.users; goto('usuarios'); toast('Usuário apagado.');
+  },
+  async auditoria() { const r = await api('audit_list', { limite: 150 }); if (!r.ok) { toast(r.msg || 'Não foi possível abrir.'); return; } AUDL = r.itens; goto('auditoria'); },
+  async lgpdexp(d) {
+    const x = DB.clients[+d.i]; if (!x) return;
+    const r = await api('lgpd_export', { nome: x.nome });
+    if (!r.ok) { toast(r.msg || 'Não foi possível exportar.'); return; }
+    download('dados_titular_' + slug(x.nome) + '_' + todayISO() + '.json', JSON.stringify(r, null, 1), 'application/json');
+    toast('Arquivo com os dados do titular salvo.');
+  },
+  async lgpdapagar(d) {
+    const x = DB.clients[+d.i]; if (!x) return;
+    const tudo = await askYN('<b>' + esc(x.nome) + '</b><br><br>Apagar só os <b>dados pessoais de contato</b> (endereço, telefone, e-mail, CPF/CNPJ, A/C), mantendo o nome e as cotações?<br><br>Toque <b>SIM</b> para apagar os dados de contato. Toque <b>NÃO</b> para ver outras opções.');
+    let modo = 'dados';
+    if (!tudo) {
+      const t2 = await askYN('Apagar o cliente <b>por completo</b>? Ele sai do cadastro e o nome dele nas cotações antigas vira "CLIENTE REMOVIDO (LGPD)".<br><br><b>Atenção:</b> notas fiscais e registros que a lei manda guardar não devem ser apagados. Em dúvida, consulte seu contador.<br><br>Apagar por completo?');
+      if (!t2) return; modo = 'tudo';
+    }
+    const r = await api('lgpd_apagar', { nome: x.nome, modo });
+    if (!r.ok) { toast(r.msg || 'Não foi possível apagar.'); return; }
+    toast(modo === 'tudo' ? 'Cliente apagado por completo.' : 'Dados pessoais de contato apagados.');
+    syncLoad();
+  },
+  syncnow() { syncLoad(); },
   moeda(d) { Q.moeda = d.v; saveDraft(); render(); },
   ptaxbuscar() { ptaxFetch(); },
   ptaxm() { ptaxStep(-0.01); }, ptaxp() { ptaxStep(0.01); },
@@ -727,11 +1021,11 @@ const ACT = {
       saveDraft(); render(); toast('Endereço preenchido. Confira e complete o número.');
     } catch (e) { toast('Não foi possível buscar o CEP agora. Digite o endereço.'); }
   },
-  exp(d) { download((d.k === 'clients' ? 'clientes_' : 'itens_') + todayISO() + '.csv', csvOf(d.k), 'text/csv;charset=utf-8'); toast('Planilha salva. Abra no Excel ou Google Planilhas.'); },
+  exp(d) { if (syncOn() && !can('exportar')) return; if (syncOn()) api('audit', { acao: 'exportar_' + d.k, detalhe: 'planilha' }); download((d.k === 'clients' ? 'clientes_' : 'itens_') + todayISO() + '.csv', csvOf(d.k), 'text/csv;charset=utf-8'); toast('Planilha salva. Abra no Excel ou Google Planilhas.'); },
   fs() { DB.ui.fs = (DB.ui.fs + 1) % 4; applyFs(); saveDB(); },
   navback() { CUR.back && CUR.back(); },
   navnext() { if (CUR.valid && CUR.valid()) return; CUR.next && CUR.next(); },
-  new(d) { if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e começar uma nova?')) return; Q = blankQuote(); saveDraft(); FC = false; goto('cliente'); },
+  new(d) { if (!can('cotar')) return; if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e começar uma nova?')) return; Q = blankQuote(); saveDraft(); FC = false; goto('cliente'); },
   resume() { FC = false; goto(Q._step && STEPS.includes(Q._step) ? Q._step : 'cliente'); },
   discard() { if (confirm('Descartar a cotação em andamento?')) { clearDraft(); goto('home'); } },
   hist() { goto('hist'); }, home() { goto('home'); }, config() { goto('config'); },
@@ -739,6 +1033,7 @@ const ACT = {
   useatt(d) { Q.att = d.v; saveDraft(); nextStep(); },
   skipatt() { Q.att = ''; saveDraft(); nextStep(); },
   useae(d) { Q.aeronave = d.v; saveDraft(); nextStep(); },
+  skipobs() { Q.obs = ''; saveDraft(); nextStep(); },
   skipae() { Q.aeronave = ''; saveDraft(); nextStep(); },
   additem() { startItem(null); },
   edititem(d) { startItem(+d.i); },
@@ -762,10 +1057,19 @@ const ACT = {
   async regen(d) { const h = DB.history.find(x => x.id === d.id); try { setPdf(h, await buildPdf(h)); goto('pronto'); } catch (e) { toast('Não foi possível gerar o PDF.'); } },
   clone(d) { if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e usar esta como base?')) return; cloneToDraft(DB.history.find(x => x.id === d.id), false); },
   fixhist(d) { if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e abrir esta?')) return; cloneToDraft(DB.history.find(x => x.id === d.id), true); },
-  delhist(d) { if (confirm('Apagar esta cotação do histórico? Isso não pode ser desfeito.')) { DB.history = DB.history.filter(x => x.id !== d.id); saveDB(); goto('hist'); } },
+  async delhist(d) {
+    if (!confirm('Apagar esta cotação do histórico? Isso não pode ser desfeito.')) return;
+    if (syncOn()) { const r = await api('del', { kind: 'history', chave: d.id }); if (!r.ok) { toast(r.msg || 'Não foi possível apagar na planilha.'); return; } }
+    DB.history = DB.history.filter(x => x.id !== d.id); saveDB(); goto('hist');
+  },
   lista(d) { goto('lista', { k: d.k }); },
-  dellist(d) { if (confirm('Apagar este registro?')) { DB[V.k].splice(+d.i, 1); saveDB(); render(); } },
-  backup() { download('backup_cotacoes_' + todayISO() + '.json', JSON.stringify(Object.assign({}, DB, { _app: 'cotacoes', _v: 2 })), 'application/json'); toast('Backup salvo. Guarde o arquivo em local seguro.'); },
+  async dellist(d) {
+    if (!confirm('Apagar este registro?')) return;
+    const x = DB[V.k][+d.i]; if (!x) return;
+    if (syncOn()) { const r = await api('del', { kind: V.k, chave: V.k === 'clients' ? x.nome : catKey(x) }); if (!r.ok) { toast(r.msg || 'Não foi possível apagar na planilha.'); return; } }
+    DB[V.k].splice(+d.i, 1); saveDB(); render();
+  },
+  backup() { if (syncOn() && !can('exportar')) return; if (syncOn()) api('audit', { acao: 'backup', detalhe: 'arquivo' }); download('backup_cotacoes_' + todayISO() + '.json', JSON.stringify(Object.assign({}, DB, { _app: 'cotacoes', _v: 2 })), 'application/json'); toast('Backup salvo. Guarde o arquivo em local seguro.'); },
   restore() { $('#filepick').value = ''; $('#filepick').click(); }
 };
 document.addEventListener('click', e => {
@@ -777,7 +1081,10 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset && t.dataset.aChange === 'counter') {
     const yr = String(new Date().getFullYear()); const n = parseInt(t.value, 10);
-    if (!isNaN(n) && n >= 0) { DB.counters[yr] = n; saveDB(); toast('Numeração atualizada. A próxima será ' + (n + 1) + '/' + yr + '.'); }
+    if (!isNaN(n) && n >= 0) {
+      if (syncOn()) { api('counter', { ano: yr, valor: n }).then(r => { if (!r.ok) toast(r.msg || 'Não foi possível salvar a numeração.'); }); }
+      DB.counters[yr] = n; saveDB(); toast('Numeração atualizada. A próxima será ' + (n + 1) + '/' + yr + '.');
+    }
   }
 });
 $('#filepick').addEventListener('change', e => {
@@ -787,6 +1094,17 @@ $('#filepick').addEventListener('change', e => {
     try {
       const x = JSON.parse(fr.result);
       if (!x || typeof x !== 'object' || !('settings' in x || 'history' in x || 'clients' in x)) throw new Error('formato');
+      if (syncOn()) {
+        if (!confirm('CARGA INICIAL: isto SUBSTITUI todos os dados da planilha da empresa (clientes, itens, cotações, numeração e configurações) pelos deste arquivo. Continuar?')) return;
+        const n = normDB(x);
+        toast('Enviando para a planilha… aguarde.');
+        api('bulk', { clients: n.clients, catalog: n.catalog, history: n.history, settings: n.settings, counters: n.counters }).then(r => {
+          if (!r.ok) { toast(r.msg || 'Não foi possível enviar para a planilha.'); return; }
+          toast('Carga concluída: ' + r.clientes + ' clientes, ' + r.itens + ' itens, ' + r.cotacoes + ' cotações.');
+          syncLoad();
+        });
+        return;
+      }
       if (!confirm('Carregar este arquivo? Os dados atuais deste aparelho serão substituídos.')) return;
       const ui = DB.ui; DB = normDB(x); DB.ui = ui; saveDB(); toast('Dados carregados com sucesso.'); goto('config');
     } catch (err) { toast('Este arquivo não parece ser um backup válido.'); }
@@ -802,6 +1120,8 @@ if (Q && !Q.entrega) Q = null;
 if (Q) { Q.moeda = Q.moeda || 'BRL'; Q.ptaxTxt = Q.ptaxTxt || ''; Q.cli = Q.cli || {}; Q.ptaxData = Q.ptaxData || todayISO(); }
 window.__cot = { fmt, parseBR, toCents, buildPdf, entregaTexts, get DB() { return DB; }, normDB, setDB(x) { DB = normDB(x); saveDB(); } };
 render();
+if (syncOn() && AUTH) syncLoad();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && syncOn() && AUTH && ['home', 'hist'].includes(V.name)) syncLoad(); });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }

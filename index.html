@@ -233,9 +233,9 @@ async function buildPdf(q) {
   const arrow = yy => { doc.setLineWidth(0.8); doc.line(387, yy - 3, 409, yy - 3); doc.setFillColor(0, 0, 0); doc.triangle(413, yy - 3, 406, yy - 6, 406, yy, 'F'); };
   y += 16;
   const usd = isUsd(q);
-  T('TOTAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T(sym(q) + (usd ? ' ' : ' ') + fmt(totalCents(q)), R, y, { b: 1, al: 'right' });
-  if (q.especial != null) { y += 15; T('P. ESPECIAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T(sym(q) + ' ' + fmt(q.especial), R, y, { b: 1, al: 'right' }); }
-  if (usd) { y += 15; arrow(y); T('R$ ' + fmt(toBrl(q, finalCents(q))), R, y, { b: 1, al: 'right' }); }
+  T(usd ? 'TOTAL EM DÓLAR' : 'TOTAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T(sym(q) + (usd ? ' ' : ' ') + fmt(totalCents(q)), R, y, { b: 1, al: 'right' });
+  if (q.especial != null) { y += 15; T('PREÇO ESPECIAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T(sym(q) + ' ' + fmt(q.especial), R, y, { b: 1, al: 'right' }); }
+  if (usd) { y += 15; T('TOTAL EM REAIS', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T('R$ ' + fmt(toBrl(q, finalCents(q))), R, y, { b: 1, al: 'right' }); }
   y += 28;
   T('VALIDADE DA PROPOSTA:', L, y, { b: 1 }); T(br(addDays(q.data, q.dias)), 264, y, { b: 1 });
   y += 27; T('OBSERVAÇÃO:', L, y, { b: 1 }); T(isUsd(q) ? 'MATERIAL COTADO EM DÓLAR' : 'MATERIAL COTADO EM REAIS', 138, y, { b: 1 });

@@ -154,7 +154,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.displa
 const saveDB = () => { if (!store.set('cot_db', DB)) toast('Atenção: não foi possível salvar neste aparelho. Faça um backup.'); };
 
 /* ---------- cotação em andamento ---------- */
-const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), dias: +DB.settings.validade || 14,
+const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), ptaxData: todayISO(), dias: +DB.settings.validade || 14,
   cliente: '', att: '', aeronave: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
   entrega: { tipo: '', dest: '', transp: '', envios: 1, fretePago: true, outro: '' }, _step: 'cliente' });
 let Q = store.get('cot_draft', null);
@@ -312,6 +312,7 @@ document.addEventListener('input', e => {
   if (t.dataset.f === 'cliente') renderClientList();
   if (t.dataset.f.startsWith('E.')) updateLive();
   if (t.dataset.f === 'ptaxTxt') ptaxEx();
+  if (t.dataset.f === 'ptaxData' && validISO(t.value)) ptaxFetch();
   if (t.dataset.f === 'data') { const o = $('#valdate'); if (o) o.textContent = br(addDays(Q.data, Q.dias)); }
   refreshNav();
 });
@@ -396,11 +397,13 @@ const SCREENS = {
         ${u ? `<div class="note">O valor em reais é calculado com a cotação do dólar abaixo. <b>Ela não aparece no PDF.</b></div>
         <label for="f_ptax">Cotação do dólar (sugerida) — R$ por US$ 1</label>
         <div class="pillrow"><button class="btn" data-a="ptaxm">−</button><input id="f_ptax" data-f="ptaxTxt" inputmode="decimal" value="${esc(Q.ptaxTxt)}" placeholder="Exemplo: 5,4000" style="text-align:center"><button class="btn" data-a="ptaxp">+</button></div>
+        <label for="f_ptd">Data da PTAX (sugerido: hoje)</label>
+        <input id="f_ptd" type="date" data-f="ptaxData" value="${esc(Q.ptaxData || todayISO())}" max="${todayISO()}">
         <p class="muted" id="ptaxinfo">${esc(Q.ptaxInfo || '')}</p>
-        <button class="btn sm" data-a="ptaxbuscar">Buscar a PTAX de compra (Banco Central)</button>
+        <button class="btn sm" data-a="ptaxbuscar">Buscar a PTAX de compra desta data (Banco Central)</button>
         <p class="muted">Você pode corrigir o valor: use + e − (de 1 centavo em 1 centavo) ou digite.</p>
         <div class="ok"><span class="muted">US$ 1.000,00 equivalem a</span><div class="tot" id="ptaxex">${isNaN(r) ? '-' : brl(Math.round(100000 * r))}</div></div>` : ''}`,
-      bind: () => { if (u && !Q.ptaxTxt) ptaxFetch(); } };
+      bind: () => { if (u && !Q.ptaxTxt) { if (!validISO(Q.ptaxData)) Q.ptaxData = todayISO(); ptaxFetch(); } } };
   },
   aeronave() {
     const past = uniq(clientHistory().map(h => h.aeronave));
@@ -676,24 +679,21 @@ async function ptaxFetch() {
   const info = () => { const el = $('#ptaxinfo'); if (el) el.textContent = Q.ptaxInfo || ''; };
   Q.ptaxInfo = 'Buscando a PTAX de compra no Banco Central…'; info();
   const B = 'https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/';
-  let end = validISO(Q.data) ? Q.data : todayISO(); if (end > todayISO()) end = todayISO();
-  const ini = addDays(end, -10);
+  let ref = validISO(Q.ptaxData) ? Q.ptaxData : todayISO(); if (ref > todayISO()) ref = todayISO();
+  const last = l => { l = (l || []).filter(x => x && x.cotacaoCompra > 0); l.sort((a, b) => String(a.dataHoraCotacao).localeCompare(String(b.dataHoraCotacao))); return l[l.length - 1] || null; };
   let v = null, err = '';
-  try {
-    const l = await ptaxGet(B + "CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='" + usDate(ini) + "'&@dataFinalCotacao='" + usDate(end) + "'&$format=json&$select=cotacaoCompra,dataHoraCotacao");
-    l.sort((a, b) => String(b.dataHoraCotacao).localeCompare(String(a.dataHoraCotacao)));
-    v = l[0] || null;
-  } catch (e) { err = e && e.message; }
-  for (let k = 0; !v && k < 8; k++) {
-    try {
-      const l = await ptaxGet(B + "CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao='" + usDate(addDays(end, -k)) + "'&$format=json&$select=cotacaoCompra,dataHoraCotacao");
-      l.sort((a, b) => String(b.dataHoraCotacao).localeCompare(String(a.dataHoraCotacao)));
-      v = l[0] || null;
-    } catch (e) { err = err || (e && e.message); if (k === 0 && err) break; }
+  for (let k = 0; !v && k < 10; k++) {
+    try { v = last(await ptaxGet(B + "CotacaoDolarDia(dataCotacao=@dataCotacao)?@dataCotacao='" + usDate(addDays(ref, -k)) + "'&$format=json")); }
+    catch (e) { err = e && e.message; if (k === 0) break; }
   }
-  if (v && v.cotacaoCompra > 0) {
+  if (!v) {
+    try { v = last(await ptaxGet(B + "CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='" + usDate(addDays(ref, -10)) + "'&@dataFinalCotacao='" + usDate(ref) + "'&$format=json")); }
+    catch (e) { err = err || (e && e.message); }
+  }
+  if (v) {
     Q.ptaxTxt = String(v.cotacaoCompra.toFixed(4)).replace('.', ',');
-    Q.ptaxInfo = 'Sugerida: PTAX de compra do Banco Central de ' + br(v.dataHoraCotacao.slice(0, 10)) + ' (último boletim). Você pode alterar.';
+    const d = v.dataHoraCotacao.slice(0, 10);
+    Q.ptaxInfo = 'PTAX de compra do Banco Central de ' + br(d) + (d !== ref ? ' (último dia útil antes de ' + br(ref) + ')' : '') + '. Você pode alterar o valor.';
   } else {
     console.log('PTAX erro', err);
     Q.ptaxInfo = 'Não foi possível buscar agora' + (err ? ' (' + err + ')' : '') + '. Digite a cotação do dólar.';
@@ -799,7 +799,7 @@ const FS = [18, 20, 23, 26];
 function applyFs() { document.documentElement.style.setProperty('--fs', FS[DB.ui.fs % 4] + 'px'); }
 applyFs();
 if (Q && !Q.entrega) Q = null;
-if (Q) { Q.moeda = Q.moeda || 'BRL'; Q.ptaxTxt = Q.ptaxTxt || ''; Q.cli = Q.cli || {}; }
+if (Q) { Q.moeda = Q.moeda || 'BRL'; Q.ptaxTxt = Q.ptaxTxt || ''; Q.cli = Q.cli || {}; Q.ptaxData = Q.ptaxData || todayISO(); }
 window.__cot = { fmt, parseBR, toCents, buildPdf, entregaTexts, get DB() { return DB; }, normDB, setDB(x) { DB = normDB(x); saveDB(); } };
 render();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

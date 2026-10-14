@@ -20,6 +20,7 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-s
 #app{max-width:720px;margin:0 auto;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;background:var(--bg)}
 header{background:var(--az);color:#fff;padding:.55rem 1rem;padding-top:calc(.55rem + env(safe-area-inset-top));position:sticky;top:0;z-index:5}
 .hrow{display:flex;align-items:center;gap:.6rem}
+header .logo{height:2.6rem;width:auto;background:#fff;border-radius:10px;padding:.15rem .4rem}
 header h1{font-size:1.15rem;margin:0;flex:1}
 .aa{background:#fff;color:var(--az);border:0;border-radius:.6rem;font-size:1rem;font-weight:700;padding:.35rem .7rem;min-height:2.4rem;cursor:pointer}
 #prog{display:none;margin-top:.45rem}
@@ -74,7 +75,7 @@ textarea{resize:vertical}
 <body>
 <div id="app">
   <header>
-    <div class="hrow"><h1 id="title">Cotações</h1><button class="aa" data-a="fs" aria-label="Mudar o tamanho da letra">Aa</button></div>
+    <div class="hrow"><h1 id="title">Cotações</h1><img class="logo" src="logo.png" alt="Ataide Com. Adesivos"></div>
     <div id="prog"><div class="t" id="progt"></div><div class="b"><i id="progb"></i></div></div>
   </header>
   <main id="view"></main>
@@ -102,6 +103,14 @@ const fmt = c => {
   return (neg ? '-' : '') + String(r).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d;
 };
 const brl = c => 'R$ ' + fmt(c);
+const isUsd = q => q && q.moeda === 'USD';
+const sym = q => isUsd(q) ? 'US$' : 'R$';
+const money = (q, c) => sym(q) + ' ' + fmt(c);
+const rateOf = q => { const v = parseBR(q.ptaxTxt != null && q.ptaxTxt !== '' ? q.ptaxTxt : q.ptax); return v > 0 ? v : NaN; };
+const toBrl = (q, c) => isUsd(q) ? Math.round(c * rateOf(q)) : c;
+const CLI_KEYS = ['end', 'cep', 'cidade', 'uf', 'pais', 'fone', 'doc', 'email'];
+const CLI_LBL = { end: 'Rua e número', cep: 'CEP', cidade: 'Cidade', uf: 'UF', pais: 'País', fone: 'Telefone', doc: 'CPF/CNPJ', email: 'E-mail' };
+const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
 function parseBR(s) {
   s = String(s == null ? '' : s).trim().replace(/R\$|\s/g, '');
   if (!s) return NaN;
@@ -146,7 +155,7 @@ const saveDB = () => { if (!store.set('cot_db', DB)) toast('Atenção: não foi 
 
 /* ---------- cotação em andamento ---------- */
 const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), dias: +DB.settings.validade || 14,
-  cliente: '', att: '', aeronave: '', itens: [], especial: null, espOn: false, espTxt: '',
+  cliente: '', att: '', aeronave: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
   entrega: { tipo: '', dest: '', transp: '', envios: 1, fretePago: true, outro: '' }, _step: 'cliente' });
 let Q = store.get('cot_draft', null);
 const saveDraft = () => { if (Q) store.set('cot_draft', Q); };
@@ -223,11 +232,13 @@ async function buildPdf(q) {
   if (y > 470) { doc.addPage(); y = 55; }
   const arrow = yy => { doc.setLineWidth(0.8); doc.line(387, yy - 3, 409, yy - 3); doc.setFillColor(0, 0, 0); doc.triangle(413, yy - 3, 406, yy - 6, 406, yy, 'F'); };
   y += 16;
-  T('TOTAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T('R$ ' + fmt(totalCents(q)), R, y, { b: 1, al: 'right' });
-  if (q.especial != null) { y += 15; T('P. ESPECIAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T('R$ ' + fmt(q.especial), R, y, { b: 1, al: 'right' }); }
+  const usd = isUsd(q);
+  T('TOTAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T(sym(q) + (usd ? ' ' : ' ') + fmt(totalCents(q)), R, y, { b: 1, al: 'right' });
+  if (q.especial != null) { y += 15; T('P. ESPECIAL', 359, y, { b: 1, s: 11, al: 'right' }); arrow(y); T(sym(q) + ' ' + fmt(q.especial), R, y, { b: 1, al: 'right' }); }
+  if (usd) { y += 15; arrow(y); T('R$ ' + fmt(toBrl(q, finalCents(q))), R, y, { b: 1, al: 'right' }); }
   y += 28;
   T('VALIDADE DA PROPOSTA:', L, y, { b: 1 }); T(br(addDays(q.data, q.dias)), 264, y, { b: 1 });
-  y += 27; T('OBSERVAÇÃO:', L, y, { b: 1 }); T('MATERIAL COTADO EM REAIS', 138, y, { b: 1 });
+  y += 27; T('OBSERVAÇÃO:', L, y, { b: 1 }); T(isUsd(q) ? 'MATERIAL COTADO EM DÓLAR' : 'MATERIAL COTADO EM REAIS', 138, y, { b: 1 });
   y += 27; T('A VISTA VALOR LÍQUIDO', 138, y, { b: 1 });
   const { prazo, dep } = entregaTexts(q.entrega);
   y += 26;
@@ -249,13 +260,13 @@ async function buildPdf(q) {
   if (up(S.titular)) bank.push(up(S.titular));
   bank.forEach(l => { T(l, L, y, { b: 1 }); y += 12; });
   y += 20;
-  T('R$ ' + fmt(finalCents(q)), 159, y, { b: 1, s: 9.5 }); T(dep, 227, y, { b: 1, s: 9.5 });
+  T('R$ ' + fmt(toBrl(q, finalCents(q))), 159, y, { b: 1, s: 9.5 }); T(dep, 227, y, { b: 1, s: 9.5 });
   if (up(S.assinatura)) { y += 29; T(up(S.assinatura), 296, y, { b: 1, s: 11, al: 'center' }); }
   return doc.output('blob');
 }
 
 /* ---------- estado de telas ---------- */
-const STEPS = ['cliente', 'contato', 'aeronave', 'itens', 'preco', 'entrega', 'datas', 'conferir'];
+const STEPS = ['cliente', 'contato', 'dados', 'aeronave', 'moeda', 'itens', 'preco', 'entrega', 'datas', 'conferir'];
 let V = { name: 'home' }, CUR = null, FC = false, E = null, PDF = null, LISTSEL = '';
 
 function goto(name, extra) { V = Object.assign({ name }, extra || {}); if (STEPS.includes(name) && Q) { Q._step = name; saveDraft(); } render(); }
@@ -290,7 +301,8 @@ function setField(f, val) {
   if (obj === 'E') E[key] = val;
   else if (obj === 'cfg') { DB.settings[key] = val; saveDB(); }
   else if (obj === 'ent') { Q.entrega[key] = val; saveDraft(); }
-  else { Q[obj] = val; if (obj === 'cliente') { const c = DB.clients.find(c => up(c.nome) === up(val)); Q.att = c ? (c.att || '') : ''; } saveDraft(); }
+  else if (obj === 'cli') { Q.cli = Q.cli || {}; Q.cli[key] = key === 'uf' ? String(val).toUpperCase() : val; saveDraft(); }
+  else { Q[obj] = val; if (obj === 'cliente') { const c = findClient(val); Q.att = c ? (c.att || '') : ''; Q.cli = cliOf(c); } saveDraft(); }
 }
 document.addEventListener('input', e => {
   const t = e.target;
@@ -299,11 +311,14 @@ document.addEventListener('input', e => {
   setField(t.dataset.f, t.type === 'checkbox' ? t.checked : t.value);
   if (t.dataset.f === 'cliente') renderClientList();
   if (t.dataset.f.startsWith('E.')) updateLive();
+  if (t.dataset.f === 'ptaxTxt') ptaxEx();
   if (t.dataset.f === 'data') { const o = $('#valdate'); if (o) o.textContent = br(addDays(Q.data, Q.dias)); }
   refreshNav();
 });
 
 /* ---------- telas ---------- */
+const findClient = n => DB.clients.find(c => up(c.nome) === up(n));
+const cliOf = c => { const o = {}; CLI_KEYS.forEach(k => { o[k] = c && c[k] ? c[k] : ''; }); return o; };
 const clientRecent = () => DB.clients.slice().sort((a, b) => (b.last || 0) - (a.last || 0));
 function renderClientList() {
   const box = $('#clist'); if (!box) return;
@@ -311,17 +326,19 @@ function renderClientList() {
   const list = clientRecent().filter(c => !q || up(c.nome).includes(q)).slice(0, 8);
   box.innerHTML = list.length ? list.map(c => `<button class="btn" data-a="pickcli" data-n="${esc(c.nome)}">${esc(c.nome)}${c.att ? `<small>A/C: ${esc(c.att)}</small>` : ''}</button>`).join('') : '<p class="muted">Nenhum cliente salvo com esse nome. Pode continuar: ele será salvo ao gerar a cotação.</p>';
 }
+const catPrice = c => isUsd(Q) ? c.unitUsd : c.unit;
+const catPriceTxt = c => { const v = catPrice(c); return v ? money(Q, v) : 'sem preço em ' + (isUsd(Q) ? 'dólar' : 'reais'); };
 function renderCatList() {
   const box = $('#catlist'); if (!box) return;
   const q = up($('#f_cat').value);
   if (!q) { box.innerHTML = ''; return; }
   const list = DB.catalog.filter(c => up(c.pn).includes(q) || up(c.nome).includes(q)).slice(0, 5);
-  box.innerHTML = list.length ? list.map((c, i) => `<button class="btn sm" style="text-align:left" data-a="pickcat" data-pn="${esc(c.pn)}" data-nm="${esc(c.nome)}">${esc(c.nome)}<small>P/N ${esc(c.pn)} • último preço ${brl(c.unit)}</small></button>`).join('') : '<p class="muted">Nada encontrado. Preencha os campos abaixo.</p>';
+  box.innerHTML = list.length ? list.map((c, i) => `<button class="btn sm" style="text-align:left" data-a="pickcat" data-pn="${esc(c.pn)}" data-nm="${esc(c.nome)}">${esc(c.nome)}<small>P/N ${esc(c.pn)} • último preço ${catPriceTxt(c)}</small></button>`).join('') : '<p class="muted">Nada encontrado. Preencha os campos abaixo.</p>';
 }
 function updateLive() {
   const el = $('#live'); if (!el || !E) return;
   const q = parseBR(E.qtd), u = toCents(E.unit);
-  el.textContent = (q > 0 && !isNaN(u)) ? `${qtdStr(q)} × R$ ${fmt(u)} = R$ ${fmt(Math.round(q * u))}` : '';
+  el.textContent = (q > 0 && !isNaN(u)) ? `${qtdStr(q)} × ${sym(Q)} ${fmt(u)} = ${sym(Q)} ${fmt(Math.round(q * u))}` : '';
 }
 const clientHistory = () => DB.history.filter(h => up(h.cliente) === up(Q.cliente));
 const uniq = a => [...new Set(a.filter(Boolean))];
@@ -330,7 +347,7 @@ const SCREENS = {
   home() {
     const draft = Q && (Q.cliente || Q.itens.length);
     const needCfg = !up(DB.settings.banco) && !String(DB.settings.fone1 || '').trim();
-    return { title: 'Cotações', html: `
+    return { title: 'COTAÇÕES - ATAIDE COM. ADESIVOS', html: `
       <h2>O que você quer fazer?</h2>
       ${needCfg ? '<div class="note"><b>Primeiro uso:</b> peça para quem configurou o aplicativo carregar os dados da empresa em <b>Configurações</b>.</div>' : ''}
       ${draft ? `<button class="btn pri" data-a="resume">Continuar a cotação em andamento<small>${esc(Q.cliente || 'sem cliente ainda')}</small></button>` : ''}
@@ -358,6 +375,33 @@ const SCREENS = {
         ${c && c.att && up(c.att) !== up(Q.att) ? `<button class="btn sm" data-a="useatt" data-v="${esc(c.att)}">Usar: ${esc(c.att)}</button>` : ''}
         <button class="btn" data-a="skipatt">Não informar ninguém</button>` };
   },
+  dados() {
+    const f = (k, ph, mode) => `<label for="d_${k}">${CLI_LBL[k]}</label><input id="d_${k}" data-f="cli.${k}" value="${esc((Q.cli || {})[k] || '')}" ${ph ? `placeholder="${esc(ph)}"` : ''} ${mode ? `inputmode="${mode}"` : ''} autocomplete="off">`;
+    const novo = !findClient(Q.cliente);
+    return { title: 'Nova cotação', back: prevStep, next: nextStep, valid: () => '',
+      html: `<h2>Dados do cliente (opcional)</h2>
+        <div class="note">${novo ? '<b>Cliente novo:</b> ele será cadastrado ao gerar a cotação.' : 'Cliente já cadastrado.'} Estes dados ficam <b>somente no cadastro</b> e <b>não aparecem no PDF</b>. Preencha só o que souber.</div>
+        ${f('end', 'Rua, número, bairro')}
+        ${f('cep', '00000-000', 'numeric')}<button class="btn sm" data-a="cep">Buscar endereço pelo CEP (precisa de internet)</button>
+        ${f('cidade')}${f('uf', 'PR')}${f('pais', 'BRASIL')}${f('fone', '(43) 99999-9999', 'tel')}${f('doc', 'CPF ou CNPJ', 'numeric')}${f('email', 'nome@email.com', 'email')}
+        <button class="btn" data-a="skipdados">Não informar agora</button>` };
+  },
+  moeda() {
+    const u = isUsd(Q), r = rateOf(Q);
+    return { title: 'Nova cotação', back: prevStep, next: nextStep,
+      valid: () => (u && isNaN(rateOf(Q))) ? 'Informe a cotação do dólar (ex.: 5,40).' : '',
+      html: `<h2>Em qual moeda é a cotação?</h2>
+        <button class="btn ${u ? '' : 'sel'}" data-a="moeda" data-v="BRL">Reais (R$)</button>
+        <button class="btn ${u ? 'sel' : ''}" data-a="moeda" data-v="USD">Dólar (US$)<small>O depósito continua em reais</small></button>
+        ${u ? `<div class="note">O valor em reais é calculado com a cotação do dólar abaixo. <b>Ela não aparece no PDF.</b></div>
+        <label for="f_ptax">Cotação do dólar (sugerida) — R$ por US$ 1</label>
+        <div class="pillrow"><button class="btn" data-a="ptaxm">−</button><input id="f_ptax" data-f="ptaxTxt" inputmode="decimal" value="${esc(Q.ptaxTxt)}" placeholder="Exemplo: 5,4000" style="text-align:center"><button class="btn" data-a="ptaxp">+</button></div>
+        <p class="muted" id="ptaxinfo">${esc(Q.ptaxInfo || '')}</p>
+        <button class="btn sm" data-a="ptaxbuscar">Buscar a PTAX de compra (Banco Central)</button>
+        <p class="muted">Você pode corrigir o valor: use + e − (de 1 centavo em 1 centavo) ou digite.</p>
+        <div class="ok"><span class="muted">US$ 1.000,00 equivalem a</span><div class="tot" id="ptaxex">${isNaN(r) ? '-' : brl(Math.round(100000 * r))}</div></div>` : ''}`,
+      bind: () => { if (u && !Q.ptaxTxt) ptaxFetch(); } };
+  },
   aeronave() {
     const past = uniq(clientHistory().map(h => h.aeronave));
     return { title: 'Nova cotação', back: prevStep, next: nextStep, valid: () => '',
@@ -369,14 +413,14 @@ const SCREENS = {
   },
   itens() {
     const cards = Q.itens.map((it, i) => `<div class="card"><b>${qtdStr(it.qtd)} × ${esc(it.nome)}</b>
-      <div class="muted">P/N: ${esc(it.pn || '-')} • R$ ${fmt(it.unit)} cada</div>
-      <div class="tot">R$ ${fmt(lineCents(it))}</div>
+      <div class="muted">P/N: ${esc(it.pn || '-')} • ${money(Q, it.unit)} cada</div>
+      <div class="tot">${money(Q, lineCents(it))}</div>
       <div class="row"><button class="btn sm" data-a="edititem" data-i="${i}">Alterar</button><button class="btn sm danger" data-a="delitem" data-i="${i}">Remover</button></div></div>`).join('');
     return { title: 'Nova cotação', back: prevStep, next: nextStep,
       valid: () => Q.itens.length ? '' : 'Adicione pelo menos um item.',
       html: `<h2>Quais itens?</h2>${cards || '<p class="muted">Nenhum item ainda.</p>'}
         <button class="btn ${Q.itens.length ? '' : 'pri'}" data-a="additem">+ Adicionar item</button>
-        ${Q.itens.length ? `<div class="ok"><span class="muted">Total dos itens</span><div class="tot" style="font-size:1.4rem">${brl(totalCents(Q))}</div></div>` : ''}` };
+        ${Q.itens.length ? `<div class="ok"><span class="muted">Total dos itens</span><div class="tot" style="font-size:1.4rem">${money(Q, totalCents(Q))}</div></div>` : ''}` };
   },
   item() {
     const isNew = V.idx == null;
@@ -393,7 +437,7 @@ const SCREENS = {
         <label for="e_q">Quantidade</label><input id="e_q" data-f="E.qtd" inputmode="decimal" value="${esc(E.qtd)}">
         <label for="e_p">P/N (código da peça)</label><input id="e_p" data-f="E.pn" value="${esc(E.pn)}" autocomplete="off" autocapitalize="characters">
         <label for="e_n">Nome do item</label><textarea id="e_n" data-f="E.nome" rows="2" autocapitalize="characters">${esc(E.nome)}</textarea>
-        <label for="e_u">Valor de uma unidade (R$)</label><input id="e_u" data-f="E.unit" inputmode="decimal" value="${esc(E.unit)}" placeholder="Exemplo: 1580,00">
+        <label for="e_u">Valor de uma unidade (${sym(Q)})</label><input id="e_u" data-f="E.unit" inputmode="decimal" value="${esc(E.unit)}" placeholder="Exemplo: 1580,00">
         <p class="muted">Digite o valor com vírgula nos centavos. Exemplo: 4,50</p>
         <div class="ok"><span class="muted">Total deste item</span><div class="tot" id="live"></div></div>`,
       bind: updateLive };
@@ -403,11 +447,11 @@ const SCREENS = {
     return { title: 'Nova cotação', back: prevStep, next: nextStep,
       valid: () => { if (!Q.espOn) return ''; const c = toCents(Q.espTxt); return (isNaN(c) || c <= 0) ? 'Informe o preço especial (ex.: 900,00).' : ''; },
       html: `<h2>Preço especial?</h2>
-        <div class="ok"><span class="muted">Total calculado dos itens</span><div class="tot" style="font-size:1.4rem">${brl(totalCents(Q))}</div></div>
+        <div class="ok"><span class="muted">Total calculado dos itens</span><div class="tot" style="font-size:1.4rem">${money(Q, totalCents(Q))}</div></div>
         <p class="muted">Use o preço especial se você combinou um valor fechado diferente da soma.</p>
         <button class="btn ${on ? '' : 'sel'}" data-a="espoff">Não, usar o total acima</button>
         <button class="btn ${on ? 'sel' : ''}" data-a="espon">Sim, informar um preço especial</button>
-        ${on ? `<label for="f_esp">Preço especial (R$)</label><input id="f_esp" data-f="espTxt" inputmode="decimal" value="${esc(Q.espTxt)}" placeholder="Exemplo: 900,00">` : ''}` };
+        ${on ? `<label for="f_esp">Preço especial (${sym(Q)})</label><input id="f_esp" data-f="espTxt" inputmode="decimal" value="${esc(Q.espTxt)}" placeholder="Exemplo: 900,00">` : ''}` };
   },
   entrega() {
     const e = Q.entrega, t = e.tipo;
@@ -453,23 +497,29 @@ const SCREENS = {
     const E2 = Q.espOn ? toCents(Q.espTxt) : null;
     const tmp = Object.assign({}, Q, { especial: E2 });
     const alt = s => `<button class="alt" data-a="alt" data-s="${s}">Alterar</button>`;
+    const hasCli = CLI_KEYS.some(k => (Q.cli || {})[k]);
+    const cNovo = !findClient(Q.cliente);
+    const itNovo = it => !DB.catalog.find(x => (it.pn && up(x.pn) === up(it.pn)) || (!it.pn && !x.pn && up(x.nome) === up(it.nome)));
+    const tag = t => `<span class="muted" style="font-weight:700"> • ${t}</span>`;
+    const brlLine = isUsd(Q) ? `<div class="muted right">Em reais (depósito): <b>${isNaN(rateOf(Q)) ? '-' : brl(toBrl(Q, finalCents(tmp)))}</b></div>` : '';
     const nextNum = (Q.numero ? numTxt(Q) : ((DB.counters[Q.data.slice(0, 4)] || 0) + 1) + '/' + Q.data.slice(0, 4));
     return { title: 'Conferir', back: () => goto('datas'), next: gerar, nextLabel: 'Gerar PDF',
       valid: () => '',
       html: `<h2>Está tudo certo?</h2><p class="muted">Confira antes de gerar o PDF. Cotação nº <b>${esc(nextNum)}</b></p>
-        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}</div>
+        <div class="sec"><div class="h"><b>Cliente</b>${alt('cliente')}</div>${esc(up(Q.cliente))}${cNovo ? tag('cliente novo, será cadastrado') : ''}${up(Q.att) ? `<br>A/C: ${esc(up(Q.att))}` : ''}${up(Q.aeronave) ? `<br>Aeronave: ${esc(up(Q.aeronave))}` : ''}${hasCli ? `<div class="muted">Dados do cadastro (não vão no PDF): ${CLI_KEYS.filter(k => Q.cli[k]).map(k => esc(CLI_LBL[k])).join(', ')}</div>` : ''}</div>
+        <div class="sec"><div class="h"><b>Moeda</b>${alt('moeda')}</div>${isUsd(Q) ? 'Dólar (US$) — depósito em reais' : 'Reais (R$)'}</div>
         <div class="sec"><div class="h"><b>Itens</b>${alt('itens')}</div>
-          ${Q.itens.map(it => `<div style="margin:.4rem 0">${qtdStr(it.qtd)} × ${esc(up(it.nome))}<div class="muted">P/N ${esc(up(it.pn) || '-')} • R$ ${fmt(it.unit)} cada = <b>R$ ${fmt(lineCents(it))}</b></div></div>`).join('')}
-          <div class="tot right">Total: ${brl(totalCents(tmp))}</div></div>
-        ${E2 != null ? `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div><span class="tot">${brl(E2)}</span></div>` : `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div>Não</div>`}
+          ${Q.itens.map(it => `<div style="margin:.4rem 0">${qtdStr(it.qtd)} × ${esc(up(it.nome))}${itNovo(it) ? tag('item novo') : ''}<div class="muted">P/N ${esc(up(it.pn) || '-')} • ${money(Q, it.unit)} cada = <b>${money(Q, lineCents(it))}</b></div></div>`).join('')}
+          <div class="tot right">Total: ${money(Q, totalCents(tmp))}</div></div>
+        ${E2 != null ? `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div><span class="tot">${money(Q, E2)}</span></div>` : `<div class="sec"><div class="h"><b>Preço especial</b>${alt('preco')}</div>Não</div>`}
         <div class="sec"><div class="h"><b>Entrega</b>${alt('entrega')}</div>${esc(prazo)}<div class="muted">${esc(dep)}</div></div>
         <div class="sec"><div class="h"><b>Datas</b>${alt('datas')}</div>Cotação: ${br(Q.data)}<br>Válida até: ${br(addDays(Q.data, Q.dias))}</div>
-        <div class="ok"><span class="muted">Valor a depositar</span><div class="tot" style="font-size:1.5rem">${brl(finalCents(tmp))}</div></div>` };
+        <div class="ok"><span class="muted">Valor a depositar</span><div class="tot" style="font-size:1.5rem">${isUsd(Q) ? (isNaN(rateOf(Q)) ? '-' : brl(toBrl(Q, finalCents(tmp)))) : brl(finalCents(tmp))}</div>${isUsd(Q) ? `<div class="muted">Cotação em ${money(Q, finalCents(tmp))}</div>` : ''}</div>` };
   },
   pronto() {
     const q = PDF.q;
     return { title: 'Pronto', html: `
-      <div class="ok"><h2 style="margin:0">Cotação ${esc(numTxt(q))} pronta</h2><div>${esc(q.cliente)} • ${brl(finalCents(q))}</div></div>
+      <div class="ok"><h2 style="margin:0">Cotação ${esc(numTxt(q))} pronta</h2><div>${esc(q.cliente)} • ${money(q, finalCents(q))}${isUsd(q) ? ' (depósito ' + brl(toBrl(q, finalCents(q))) + ')' : ''}</div></div>
       <button class="btn pri" data-a="share">Enviar pelo WhatsApp</button>
       <button class="btn" data-a="viewpdf">Ver o PDF</button>
       <button class="btn" data-a="savepdf">Salvar o PDF no aparelho</button>
@@ -482,15 +532,15 @@ const SCREENS = {
     const list = DB.history.slice().sort((a, b) => (b.ano - a.ano) || (b.numero - a.numero));
     return { title: 'Cotações anteriores', back: () => goto('home'), backLabel: 'Início',
       html: `<h2>Cotações anteriores</h2>${list.length ? '' : '<p class="muted">Ainda não há cotações salvas.</p>'}
-        ${list.map(h => `<button class="btn" data-a="detail" data-id="${esc(h.id)}">${esc(numTxt(h))} — ${esc(h.cliente)}<small>${br(h.data)} • ${brl(finalCents(h))}</small></button>`).join('')}` };
+        ${list.map(h => `<button class="btn" data-a="detail" data-id="${esc(h.id)}">${esc(numTxt(h))} — ${esc(h.cliente)}<small>${br(h.data)} • ${money(h, finalCents(h))}</small></button>`).join('')}` };
   },
   detail() {
     const h = DB.history.find(x => x.id === V.id);
     if (!h) { return { title: 'Cotação', back: () => goto('hist'), html: '<p>Cotação não encontrada.</p>' }; }
     return { title: 'Cotação ' + numTxt(h), back: () => goto('hist'), html: `
       <h2>${esc(numTxt(h))} — ${esc(h.cliente)}</h2>
-      <p class="muted">${br(h.data)} • ${brl(finalCents(h))}</p>
-      ${h.itens.map(it => `<div class="card">${qtdStr(it.qtd)} × ${esc(up(it.nome))}<div class="muted">P/N ${esc(up(it.pn) || '-')} • R$ ${fmt(it.unit)}</div></div>`).join('')}
+      <p class="muted">${br(h.data)} • ${money(h, finalCents(h))}</p>
+      ${h.itens.map(it => `<div class="card">${qtdStr(it.qtd)} × ${esc(up(it.nome))}<div class="muted">P/N ${esc(up(it.pn) || '-')} • ${money(h, it.unit)}</div></div>`).join('')}
       <button class="btn pri" data-a="regen" data-id="${esc(h.id)}">Gerar o PDF / enviar no WhatsApp</button>
       <button class="btn" data-a="clone" data-id="${esc(h.id)}">Usar como base para uma nova cotação</button>
       <button class="btn" data-a="fixhist" data-id="${esc(h.id)}">Corrigir esta cotação</button>
@@ -503,6 +553,7 @@ const SCREENS = {
     return { title: 'Configurações', back: () => goto('home'), backLabel: 'Concluído',
       html: `<h2>Configurações</h2>
         <div class="note">Estes dados aparecem no PDF. Normalmente são preenchidos uma única vez, por quem instala o aplicativo.</div>
+        <h3>Tamanho da letra</h3><button class="btn" data-a="fs">Mudar o tamanho da letra</button>
         <h3>Telefones (WhatsApp)</h3>${f('fone1', 'Telefone 1', '(43) 99999-9999')}${f('fone2', 'Telefone 2 (opcional)')}
         <h3>Dados para depósito</h3>${f('banco', 'Banco', 'Exemplo: BRADESCO')}${f('agencia', 'Agência')}${f('conta', 'Conta corrente')}${f('doc', 'CPF ou CNPJ do titular')}${f('titular', 'Nome do titular')}
         <h3>Assinatura no final do PDF</h3>${f('assinatura', 'Texto da assinatura', 'Exemplo: PATRÍCIA - LONDRINA')}
@@ -512,6 +563,8 @@ const SCREENS = {
         <h3>Dados do aplicativo</h3>
         <button class="btn" data-a="lista" data-k="clients">Clientes salvos (${DB.clients.length})</button>
         <button class="btn" data-a="lista" data-k="catalog">Itens salvos (${DB.catalog.length})</button>
+        <button class="btn" data-a="exp" data-k="clients">Exportar clientes (planilha)</button>
+        <button class="btn" data-a="exp" data-k="catalog">Exportar itens (planilha)</button>
         <button class="btn" data-a="backup">Fazer backup (salvar arquivo)</button>
         <button class="btn" data-a="restore">Carregar arquivo de dados / backup</button>
         <p class="muted">O backup guarda tudo (clientes, itens, cotações e configurações). Guarde o arquivo em local seguro, como o Google Drive.</p>` };
@@ -519,8 +572,8 @@ const SCREENS = {
   lista() {
     const k = V.k, arr = DB[k];
     const rows = arr.map((x, i) => k === 'clients'
-      ? `<div class="card"><b>${esc(x.nome)}</b>${x.att ? `<div class="muted">A/C: ${esc(x.att)}</div>` : ''}<button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`
-      : `<div class="card"><b>${esc(x.nome)}</b><div class="muted">P/N ${esc(x.pn || '-')} • R$ ${fmt(x.unit)}</div><button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`).join('');
+      ? `<div class="card"><b>${esc(x.nome)}</b>${x.att ? `<div class="muted">A/C: ${esc(x.att)}</div>` : ''}${CLI_KEYS.filter(k => x[k]).map(k => `<div class="muted">${esc(CLI_LBL[k])}: ${esc(x[k])}</div>`).join('')}<button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`
+      : `<div class="card"><b>${esc(x.nome)}</b><div class="muted">P/N ${esc(x.pn || '-')} • ${x.unit ? 'R$ ' + fmt(x.unit) : ''}${x.unit && x.unitUsd ? ' • ' : ''}${x.unitUsd ? 'US$ ' + fmt(x.unitUsd) : ''}</div><button class="btn sm danger" data-a="dellist" data-i="${i}">Apagar</button></div>`).join('');
     return { title: k === 'clients' ? 'Clientes salvos' : 'Itens salvos', back: () => goto('config'), html: `<h2>${k === 'clients' ? 'Clientes salvos' : 'Itens salvos'}</h2>${rows || '<p class="muted">Nada salvo ainda.</p>'}` };
   }
 };
@@ -539,7 +592,9 @@ function startItem(i) {
 async function gerar() {
   const q = JSON.parse(JSON.stringify(Q));
   q.especial = q.espOn ? toCents(q.espTxt) : null;
-  delete q.espOn; delete q.espTxt; delete q._step;
+  const cli = q.cli || {};
+  if (q.moeda === 'USD') q.ptax = rateOf(Q); else { q.moeda = 'BRL'; delete q.ptax; }
+  delete q.espOn; delete q.espTxt; delete q._step; delete q.cli; delete q.ptaxTxt; delete q.ptaxInfo;
   const isFix = !!q.numero;
   const yr = q.data.slice(0, 4);
   if (!isFix) { q.numero = (DB.counters[yr] || 0) + 1; q.ano = +yr; }
@@ -552,12 +607,23 @@ async function gerar() {
   const i = DB.history.findIndex(h => h.id === q.id);
   if (i >= 0) DB.history[i] = q; else DB.history.push(q);
   const now = Date.now();
-  let c = DB.clients.find(c => up(c.nome) === up(q.cliente));
+  let c = findClient(q.cliente);
   if (!c) { c = { nome: up(q.cliente) }; DB.clients.push(c); }
   c.att = up(q.att); c.last = now;
+  const diffs = [];
+  CLI_KEYS.forEach(k => {
+    const nv = String(cli[k] || '').trim(), ov = String(c[k] || '').trim();
+    if (!nv || nv === ov) return;
+    if (!ov) c[k] = nv; else diffs.push([k, ov, nv]);
+  });
+  if (diffs.length) {
+    const ok = await askYN('Os dados de <b>' + esc(c.nome) + '</b> mudaram:<br><br>' + diffs.map(d => esc(CLI_LBL[d[0]]) + ': <s>' + esc(d[1]) + '</s> → <b>' + esc(d[2]) + '</b>').join('<br>') + '<br><br><b>Atualizar o cadastro?</b>');
+    if (ok) diffs.forEach(d => { c[d[0]] = d[2]; });
+  }
   q.itens.forEach(it => {
     const k = DB.catalog.find(x => (it.pn && up(x.pn) === it.pn) || (!it.pn && !x.pn && up(x.nome) === it.nome));
-    if (k) { k.nome = it.nome; k.unit = it.unit; } else DB.catalog.push({ pn: it.pn, nome: it.nome, unit: it.unit });
+    const f = q.moeda === 'USD' ? 'unitUsd' : 'unit';
+    if (k) { k.nome = it.nome; k[f] = it.unit; } else { const n = { pn: it.pn, nome: it.nome }; n[f] = it.unit; DB.catalog.push(n); }
   });
   saveDB(); clearDraft();
   setPdf(q, blob); goto('pronto');
@@ -581,12 +647,71 @@ async function sharePdf() {
 function cloneToDraft(h, keepNumber) {
   const q = JSON.parse(JSON.stringify(h));
   q.espOn = q.especial != null; q.espTxt = q.especial != null ? fmt(q.especial) : '';
+  q.moeda = q.moeda || 'BRL'; q.ptaxTxt = q.ptax ? String(q.ptax).replace('.', ',') : ''; q.ptaxInfo = ''; q.cli = cliOf(findClient(q.cliente));
   if (!keepNumber) { q.id = uid(); q.numero = null; q.ano = null; q.data = todayISO(); q.dias = +DB.settings.validade || 14; delete q.criadaEm; }
   q._step = 'conferir'; Q = q; saveDraft(); FC = false; goto('conferir');
 }
 function download(name, text, type) { const b = new Blob([text], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 
+function askYN(html) {
+  return new Promise(res => {
+    const w = document.createElement('div');
+    w.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99;display:flex;align-items:center;justify-content:center;padding:1rem';
+    w.innerHTML = '<div style="background:#fff;color:#111;border-radius:14px;padding:1.2rem;max-width:30rem;width:100%;max-height:90vh;overflow:auto"><div style="margin-bottom:1rem">' + html + '</div><div class="row"><button class="btn pri" data-yn="1">SIM</button><button class="btn" data-yn="0">NÃO</button></div></div>';
+    w.addEventListener('click', e => { const b = e.target.closest('[data-yn]'); if (b) { w.remove(); res(b.dataset.yn === '1'); } });
+    document.body.appendChild(w);
+  });
+}
+const ymd = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+const usDate = iso => { const [y, m, d] = iso.split('-'); return m + '-' + d + '-' + y; };
+async function ptaxFetch() {
+  const info = () => { const el = $('#ptaxinfo'); if (el) el.textContent = Q.ptaxInfo || ''; };
+  Q.ptaxInfo = 'Buscando a PTAX de compra no Banco Central…'; info();
+  try {
+    let end = validISO(Q.data) ? Q.data : todayISO(); if (end > todayISO()) end = todayISO();
+    const ini = addDays(end, -10);
+    const url = "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@di,dataFinal=@df)?@di='" + usDate(ini) + "'&@df='" + usDate(end) + "'&$orderby=dataHoraCotacao%20desc&$top=50&$format=json&$select=cotacaoCompra,dataHoraCotacao";
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 12000);
+    const r = await fetch(url, { signal: ctl.signal }); clearTimeout(tm);
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json(); const v = j.value && j.value[0];
+    if (!v || !(v.cotacaoCompra > 0)) throw new Error('vazio');
+    Q.ptaxTxt = String(v.cotacaoCompra.toFixed(4)).replace('.', ',');
+    Q.ptaxInfo = 'Sugerida: PTAX de compra do Banco Central de ' + br(v.dataHoraCotacao.slice(0, 10)) + ' (último boletim). Você pode alterar.';
+  } catch (e) {
+    console.log('PTAX erro', e && e.message);
+    Q.ptaxInfo = 'Não foi possível buscar agora (sem internet?). Digite a cotação do dólar.';
+  }
+  saveDraft();
+  if (V.name === 'moeda') { const i = $('#f_ptax'); if (i) i.value = Q.ptaxTxt; info(); ptaxEx(); refreshNav(); }
+}
+function ptaxEx() { const el = $('#ptaxex'); if (el) { const r = rateOf(Q); el.textContent = isNaN(r) ? '-' : brl(Math.round(100000 * r)); } }
+function ptaxStep(d) { const r = rateOf(Q); const b = isNaN(r) ? 0 : r; Q.ptaxTxt = (Math.max(0.01, Math.round((b + d) * 10000) / 10000)).toFixed(4).replace('.', ','); saveDraft(); const i = $('#f_ptax'); if (i) i.value = Q.ptaxTxt; ptaxEx(); refreshNav(); }
+function csvOf(k) {
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const n = c => c ? (c / 100).toFixed(2).replace('.', ',') : '';
+  let rows;
+  if (k === 'clients') rows = [['Nome', 'A/C', 'Rua e número', 'CEP', 'Cidade', 'UF', 'País', 'Telefone', 'CPF/CNPJ', 'E-mail']].concat(DB.clients.map(c => [c.nome, c.att, c.end, c.cep, c.cidade, c.uf, c.pais, c.fone, c.doc, c.email]));
+  else rows = [['P/N', 'Nome', 'Preço R$', 'Preço US$']].concat(DB.catalog.map(c => [c.pn, c.nome, n(c.unit), n(c.unitUsd)]));
+  return '\ufeff' + rows.map(r => r.map(q).join(';')).join('\r\n');
+}
 const ACT = {
+  moeda(d) { Q.moeda = d.v; saveDraft(); render(); },
+  ptaxbuscar() { ptaxFetch(); },
+  ptaxm() { ptaxStep(-0.01); }, ptaxp() { ptaxStep(0.01); },
+  skipdados() { nextStep(); },
+  async cep() {
+    const c = String((Q.cli || {}).cep || '').replace(/\D/g, '');
+    if (c.length !== 8) { toast('Digite o CEP com 8 números.'); return; }
+    try {
+      const r = await fetch('https://viacep.com.br/ws/' + c + '/json/'); const j = await r.json();
+      if (j.erro) { toast('CEP não encontrado.'); return; }
+      Q.cli.end = Q.cli.end || [j.logradouro, j.bairro].filter(Boolean).join(', ');
+      Q.cli.cidade = j.localidade || Q.cli.cidade; Q.cli.uf = j.uf || Q.cli.uf; Q.cli.pais = Q.cli.pais || 'BRASIL';
+      saveDraft(); render(); toast('Endereço preenchido. Confira e complete o número.');
+    } catch (e) { toast('Não foi possível buscar o CEP agora. Digite o endereço.'); }
+  },
+  exp(d) { download((d.k === 'clients' ? 'clientes_' : 'itens_') + todayISO() + '.csv', csvOf(d.k), 'text/csv;charset=utf-8'); toast('Planilha salva. Abra no Excel ou Google Planilhas.'); },
   fs() { DB.ui.fs = (DB.ui.fs + 1) % 4; applyFs(); saveDB(); },
   navback() { CUR.back && CUR.back(); },
   navnext() { if (CUR.valid && CUR.valid()) return; CUR.next && CUR.next(); },
@@ -594,7 +719,7 @@ const ACT = {
   resume() { FC = false; goto(Q._step && STEPS.includes(Q._step) ? Q._step : 'cliente'); },
   discard() { if (confirm('Descartar a cotação em andamento?')) { clearDraft(); goto('home'); } },
   hist() { goto('hist'); }, home() { goto('home'); }, config() { goto('config'); },
-  pickcli(d) { const c = DB.clients.find(c => c.nome === d.n); Q.cliente = d.n; Q.att = c ? (c.att || '') : ''; saveDraft(); nextStep(); },
+  pickcli(d) { const c = DB.clients.find(c => c.nome === d.n); Q.cliente = d.n; Q.att = c ? (c.att || '') : ''; Q.cli = cliOf(c); saveDraft(); nextStep(); },
   useatt(d) { Q.att = d.v; saveDraft(); nextStep(); },
   skipatt() { Q.att = ''; saveDraft(); nextStep(); },
   useae(d) { Q.aeronave = d.v; saveDraft(); nextStep(); },
@@ -602,7 +727,7 @@ const ACT = {
   additem() { startItem(null); },
   edititem(d) { startItem(+d.i); },
   delitem(d) { if (confirm('Remover este item?')) { Q.itens.splice(+d.i, 1); saveDraft(); render(); } },
-  pickcat(d) { const c = DB.catalog.find(c => c.pn === d.pn && c.nome === d.nm); if (!c) return; E.pn = c.pn; E.nome = c.nome; E.unit = fmt(c.unit); $('#e_p').value = E.pn; $('#e_n').value = E.nome; $('#e_u').value = E.unit; $('#f_cat').value = ''; renderCatList(); updateLive(); refreshNav(); },
+  pickcat(d) { const c = DB.catalog.find(c => c.pn === d.pn && c.nome === d.nm); if (!c) return; E.pn = c.pn; E.nome = c.nome; E.unit = catPrice(c) ? fmt(catPrice(c)) : ''; $('#e_p').value = E.pn; $('#e_n').value = E.nome; $('#e_u').value = E.unit; $('#f_cat').value = ''; renderCatList(); updateLive(); refreshNav(); },
   espon() { Q.espOn = true; saveDraft(); render(); setTimeout(() => { const e = $('#f_esp'); e && e.focus(); }, 50); },
   espoff() { Q.espOn = false; saveDraft(); render(); },
   tipo(d) { Q.entrega.tipo = d.v; saveDraft(); render(); },
@@ -624,7 +749,7 @@ const ACT = {
   delhist(d) { if (confirm('Apagar esta cotação do histórico? Isso não pode ser desfeito.')) { DB.history = DB.history.filter(x => x.id !== d.id); saveDB(); goto('hist'); } },
   lista(d) { goto('lista', { k: d.k }); },
   dellist(d) { if (confirm('Apagar este registro?')) { DB[V.k].splice(+d.i, 1); saveDB(); render(); } },
-  backup() { download('backup_cotacoes_' + todayISO() + '.json', JSON.stringify(Object.assign({}, DB, { _app: 'cotacoes', _v: 1 })), 'application/json'); toast('Backup salvo. Guarde o arquivo em local seguro.'); },
+  backup() { download('backup_cotacoes_' + todayISO() + '.json', JSON.stringify(Object.assign({}, DB, { _app: 'cotacoes', _v: 2 })), 'application/json'); toast('Backup salvo. Guarde o arquivo em local seguro.'); },
   restore() { $('#filepick').value = ''; $('#filepick').click(); }
 };
 document.addEventListener('click', e => {
@@ -658,6 +783,7 @@ const FS = [18, 20, 23, 26];
 function applyFs() { document.documentElement.style.setProperty('--fs', FS[DB.ui.fs % 4] + 'px'); }
 applyFs();
 if (Q && !Q.entrega) Q = null;
+if (Q) { Q.moeda = Q.moeda || 'BRL'; Q.ptaxTxt = Q.ptaxTxt || ''; Q.cli = Q.cli || {}; }
 window.__cot = { fmt, parseBR, toCents, buildPdf, entregaTexts, get DB() { return DB; }, normDB, setDB(x) { DB = normDB(x); saveDB(); } };
 render();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

@@ -235,6 +235,7 @@ const maskDoc = d => { const n = String(d || '').replace(/\D/g, ''); return n.le
 const catKey = x => x.pn ? 'PN:' + up(x.pn) : 'NM:' + up(x.nome);
 
 /* ---------- cotação em andamento ---------- */
+let HIST_N = 50; // lista do histórico em páginas de 50, para não pesar quando crescer
 const blankQuote = () => ({ id: uid(), numero: null, ano: null, data: todayISO(), ptaxData: todayISO(), dias: +DB.settings.validade || 14,
   cliente: '', att: '', aeronave: '', obs: '', moeda: 'BRL', ptaxTxt: '', ptaxInfo: '', cli: {}, itens: [], especial: null, espOn: false, espTxt: '',
   entrega: { tipo: '', dest: '', transp: '', envios: 1, fretePago: true, outro: '' }, _step: 'cliente' });
@@ -326,8 +327,8 @@ async function buildPdf(q) {
   y += 26;
   if (prazo) {
     font(true); doc.setFontSize(9);
-    const lines = doc.splitTextToSize('PRAZO DE ENTREGA: ' + prazo, 262);
-    T(lines, 273, y, { b: 1, al: 'center' }); y += (lines.length - 1) * LH;
+    const lines = doc.splitTextToSize('PRAZO DE ENTREGA: ' + prazo, 395);
+    T(lines, 138, y, { b: 1 }); y += (lines.length - 1) * LH;
   }
   y += 28;
   T('QUALQUER DÚVIDA COM RELAÇÃO A ESTA COTAÇÃO CONTACTAR VIA E-MAIL OU VIA', L, y, { b: 1 });
@@ -712,7 +713,8 @@ const SCREENS = {
     const list = DB.history.slice().sort((a, b) => (b.ano - a.ano) || (b.numero - a.numero));
     return { title: 'Cotações anteriores', back: () => goto('home'), backLabel: 'Início',
       html: `<h2>Cotações anteriores</h2>${list.length ? '' : '<p class="muted">Ainda não há cotações salvas.</p>'}
-        ${list.map(h => `<button class="btn" data-a="detail" data-id="${esc(h.id)}">${esc(numTxt(h))} — ${esc(h.cliente)}<small>${br(h.data)} • ${money(h, finalCents(h))}</small></button>`).join('')}` };
+        ${list.slice(0, HIST_N).map(h => `<button class="btn" data-a="detail" data-id="${esc(h.id)}">${esc(numTxt(h))} — ${esc(h.cliente)}<small>${br(h.data)} • ${money(h, finalCents(h))}</small></button>`).join('')}
+        ${list.length > HIST_N ? `<button class="btn" data-a="histmais">Mostrar mais (${list.length - HIST_N} restantes)</button>` : ''}` };
   },
   detail() {
     const h = DB.history.find(x => x.id === V.id);
@@ -888,7 +890,6 @@ async function ptaxFetch() {
     const d = v.dataHoraCotacao.slice(0, 10);
     Q.ptaxInfo = 'PTAX de compra do Banco Central de ' + br(d) + (d !== ref ? ' (último dia útil antes de ' + br(ref) + ')' : '') + '. Você pode alterar o valor.';
   } else {
-    console.log('PTAX erro', err);
     Q.ptaxInfo = 'Não foi possível buscar agora' + (err ? ' (' + err + ')' : '') + '. Digite a cotação do dólar.';
   }
   saveDraft();
@@ -1026,7 +1027,8 @@ const ACT = {
   new(d) { if (!can('cotar')) return; if (Q && (Q.cliente || Q.itens.length) && !confirm('Já existe uma cotação em andamento. Descartar e começar uma nova?')) return; Q = blankQuote(); saveDraft(); FC = false; goto('cliente'); },
   resume() { FC = false; goto(Q._step && STEPS.includes(Q._step) ? Q._step : 'cliente'); },
   discard() { if (confirm('Descartar a cotação em andamento?')) { clearDraft(); goto('home'); } },
-  hist() { goto('hist'); }, home() { goto('home'); }, config() { goto('config'); },
+  histmais() { HIST_N += 50; render(); },
+  hist() { HIST_N = 50; goto('hist'); }, home() { goto('home'); }, config() { goto('config'); },
   pickcli(d) { const c = DB.clients.find(c => c.nome === d.n); Q.cliente = d.n; Q.att = c ? (c.att || '') : ''; Q.cli = cliOf(c); saveDraft(); nextStep(); },
   useatt(d) { Q.att = d.v; saveDraft(); nextStep(); },
   skipatt() { Q.att = ''; saveDraft(); nextStep(); },
@@ -1048,7 +1050,7 @@ const ACT = {
   diap() { Q.dias = Math.min(365, Q.dias + 1); saveDraft(); $('#dias').textContent = Q.dias + ' dias'; $('#valdate').textContent = br(addDays(Q.data, Q.dias)); },
   alt(d) { FC = true; goto(d.s); },
   share() { sharePdf(); },
-  viewpdf() { window.open(PDF.url, '_blank'); },
+  viewpdf() { window.open(PDF.url, '_blank', 'noopener'); },
   savepdf() { downloadPdf(); },
   fixq() { cloneToDraft(PDF.q, true); },
   detail(d) { goto('detail', { id: d.id }); },
